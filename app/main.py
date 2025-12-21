@@ -12,7 +12,7 @@ from datetime import datetime, timedelta
 
 # ---------------- CONFIG ----------------
 
-DATABASE_URL = "postgresql://USER:PASSWORD@HOST:PORT/DBNAME"  # change this
+DATABASE_URL = "postgresql://neondb_owner:npg_jiyeGI6W5Lfl@ep-winter-feather-a41vs75x-pooler.us-east-1.aws.neon.tech/SOS?sslmode=require&channel_binding=require"  # change this
 SECRET_KEY = "CHANGE_THIS_SECRET"
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = 60
