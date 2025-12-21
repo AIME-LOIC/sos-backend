@@ -118,7 +118,15 @@ def admin_only(user: User = Depends(get_current_user)):
 # ---------------- APP ----------------
 
 app = FastAPI(title="SOS Backend")
+# Add this to your FastAPI main.py
+from fastapi.middleware.cors import CORSMiddleware
 
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"], # In production, replace "*" with your specific domains
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 # ---------------- AUTH ----------------
 
 @app.post("/auth/register")
