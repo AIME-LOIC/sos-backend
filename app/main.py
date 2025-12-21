@@ -6,9 +6,9 @@ from typing import List
 from fastapi import FastAPI, Depends, HTTPException, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
-from sqlalchemy import create_engine, Column, String, Float, ForeignKey, DateTime
+from sqlalchemy import create_engine, Column, String, Float, ForeignKey, DateTime, TypeDecorator
 from sqlalchemy.orm import sessionmaker, declarative_base, Session
-from sqlalchemy.dialects.postgresql import UUID
+from sqlalchemy.dialects.postgresql import UUID as PG_UUID
 from sqlalchemy.sql import func
 from passlib.context import CryptContext
 from jose import jwt, JWTError
@@ -16,17 +16,16 @@ from pydantic import BaseModel
 
 # ---------------- CONFIG ----------------
 
-# Render provides DATABASE_URL. We fix it for SQLAlchemy compatibility.
-DATABASE_URL = os.getenv("postgresql://neondb_owner:npg_jiyeGI6W5Lfl@ep-winter-feather-a41vs75x-pooler.us-east-1.aws.neon.tech/SOS?sslmode=require&channel_binding=require")
-if DATABASE_URL and DATABASE_URL.startswith("postgres://"):
+# Fixed getenv: first arg is key, second is default value
+DEFAULT_DB = "postgresql://neondb_owner:npg_jiyeGI6W5Lfl@ep-winter-feather-a41vs75x-pooler.us-east-1.aws.neon.tech/SOS?sslmode=require"
+DATABASE_URL = os.getenv("DATABASE_URL", DEFAULT_DB)
+
+if DATABASE_URL.startswith("postgres://"):
     DATABASE_URL = DATABASE_URL.replace("postgres://", "postgresql://", 1)
-else:
-    # Fallback for local testing if no env var is set
-    DATABASE_URL = "sqlite:///./test.db"
 
 SECRET_KEY = os.getenv("SECRET_KEY", "SUPER_SECRET_KEY_CHANGE_ME")
 ALGORITHM = "HS256"
-ACCESS_TOKEN_EXPIRE_MINUTES = 60 * 24 # 24 hours
+ACCESS_TOKEN_EXPIRE_MINUTES = 60 * 24 
 
 # ---------------- DATABASE ----------------
 
@@ -36,11 +35,27 @@ Base = declarative_base()
 
 # ---------------- MODELS ----------------
 
+# Cross-platform UUID support (works on SQLite and Postgres)
+class GUID(TypeDecorator):
+    impl = String
+    cache_ok = True
+    def load_dialect_impl(self, dialect):
+        if dialect.name == 'postgresql':
+            return dialect.type_descriptor(PG_UUID(as_uuid=True))
+        else:
+            return dialect.type_descriptor(String(36))
+
+    def process_bind_param(self, value, dialect):
+        if value is None: return value
+        return str(value)
+
+    def process_result_value(self, value, dialect):
+        if value is None: return value
+        return uuid.UUID(value)
+
 class User(Base):
     __tablename__ = "users"
-
-    # Fixed: Removed as_uuid=True for SQLAlchemy 2.0+
-    id = Column(UUID, primary_key=True, default=uuid.uuid4)
+    id = Column(PG_UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     full_name = Column(String, nullable=False)
     blood_type = Column(String, nullable=False)
     phone = Column(String, unique=True, nullable=False)
@@ -48,18 +63,15 @@ class User(Base):
     hashed_password = Column(String, nullable=False)
     role = Column(String, default="user")
 
-
 class SOSAlert(Base):
     __tablename__ = "sos_alerts"
-
-    id = Column(UUID, primary_key=True, default=uuid.uuid4)
-    user_id = Column(UUID, ForeignKey("users.id"))
+    id = Column(PG_UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    user_id = Column(PG_UUID(as_uuid=True), ForeignKey("users.id"))
     latitude = Column(Float, nullable=False)
     longitude = Column(Float, nullable=False)
     status = Column(String, default="active")
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
-# Create tables
 Base.metadata.create_all(bind=engine)
 
 # ---------------- SCHEMAS ----------------
@@ -111,10 +123,12 @@ def get_current_user(token: str = Depends(oauth2_scheme), db: Session = Depends(
     )
     try:
         payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
-        user_id: str = payload.get("sub")
-        if user_id is None:
+        user_id_str: str = payload.get("sub")
+        if user_id_str is None:
             raise credentials_exception
-    except JWTError:
+        # Convert string sub back to UUID object for SQLAlchemy
+        user_id = uuid.UUID(user_id_str)
+    except (JWTError, ValueError):
         raise credentials_exception
 
     user = db.query(User).filter(User.id == user_id).first()
@@ -126,7 +140,6 @@ def get_current_user(token: str = Depends(oauth2_scheme), db: Session = Depends(
 
 app = FastAPI(title="SOS Backend")
 
-# IMPORTANT: CORS middleware for Flutter connectivity
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -159,6 +172,7 @@ def register(user: UserCreate, db: Session = Depends(get_db)):
 
 @app.post("/auth/login", response_model=Token)
 def login(form_data: OAuth2PasswordRequestForm = Depends(), db: Session = Depends(get_db)):
+    # Using phone as the username in the form
     user = db.query(User).filter(User.phone == form_data.username).first()
     if not user or not verify_password(form_data.password, user.hashed_password):
         raise HTTPException(status_code=401, detail="Invalid credentials")
