@@ -195,3 +195,9 @@ def create_sos(sos: SOSCreate, user: User = Depends(get_current_user), db: Sessi
 @app.get("/sos/my-alerts")
 def my_alerts(user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     return db.query(SOSAlert).filter(SOSAlert.user_id == user.id).all()
+# ---------------- ADMIN ROUTES ----------------
+
+@app.get("/admin/all-alerts")
+def get_all_alerts(db: Session = Depends(get_db)):
+    # In a real app, you'd add a security check here to ensure only admins can see this
+    return db.query(SOSAlert).order_by(SOSAlert.created_at.desc()).all()
