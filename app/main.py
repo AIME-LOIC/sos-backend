@@ -15,7 +15,8 @@ from jose import jwt, JWTError
 from pydantic import BaseModel
 
 # --- ADDED: GEMINI IMPORT ---
-import google.generativeai as genai
+from google import genai
+from google.genai import types
 
 # ---------------- CONFIG ----------------
 
@@ -30,10 +31,8 @@ ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = 60 * 24 
 
 # --- ADDED: GEMINI CONFIG ---
-GEMINI_API_KEY = "AIzaSyDFOvK8Y863TiKYjTnhD4oB0tfbSisiAhs"
-genai.configure(api_key=GEMINI_API_KEY)
-# Using 1.5-flash for speed and lower latency in emergencies
-model = genai.GenerativeModel('gemini-1.5-flash')
+GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "AIzaSyDFOvK8Y863TiKYjTnhD4oB0tfbSisiAhs")
+client = genai.Client(api_key=GEMINI_API_KEY)
 
 # ---------------- DATABASE ----------------
 
@@ -203,16 +202,14 @@ async def analyze_location(data: dict = Body(...)):
         raise HTTPException(status_code=400, detail="Latitude and Longitude required")
 
     prompt = f"Emergency SOS at Lat {lat}, Lon {lon}. List 2 nearest hospitals and 1 police station."
-
-    # --- RETRY LOGIC ---
-    max_retries = 3
-    for attempt in range(max_retries):
-        try:
-            response = model.generate_content(prompt)
-            return {"analysis": response.text}
-        except Exception as e:
-            if attempt < max_retries - 1:
-                time.sleep(2)  # Wait 2 seconds before trying again
-                continue
-            else:
-                return {"analysis": "AI Service busy. Please check coordinates manually: " + f"https://www.google.com/maps?q={lat},{lon}"}
+    
+    try:
+        # Using the new SDK's generation method
+        response = client.models.generate_content(
+            model='gemini-2.0-flash', # Uses the 2025 ultra-fast model
+            contents=prompt
+        )
+        return {"analysis": response.text}
+    except Exception as e:
+        print(f"AI Error: {e}")
+        return {"analysis": "AI System Refreshing. Please use the 'Map' button for manual coordinate check."}
