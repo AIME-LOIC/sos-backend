@@ -1,11 +1,21 @@
+import os
+import google.generativeai as genai
 from passlib.context import CryptContext
 from datetime import datetime, timedelta
 from jose import jwt, JWTError
-from fastapi import Depends, HTTPException
+from fastapi import Depends, HTTPException, Body
 from fastapi.security import OAuth2PasswordBearer
 from sqlalchemy.orm import Session
 from app.database import SessionLocal
 from app.models import User
+
+# ----------------------
+# Gemini AI Configuration
+# ----------------------
+# Replace with your key or use environment variables for safety
+GEMINI_API_KEY = "AIzaSyDFOvK8Y863TiKYjTnhD4oB0tfbSisiAhs"
+genai.configure(api_key=GEMINI_API_KEY)
+ai_model = genai.GenerativeModel('gemini-1.5-flash')
 
 # ----------------------
 # Config & JWT Settings
@@ -37,7 +47,7 @@ def create_access_token(data: dict):
 # ----------------------
 # DB & Auth Dependencies
 # ----------------------
-oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/users/login")
+oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/auth/login")
 
 def get_db():
     db = SessionLocal()
@@ -59,3 +69,36 @@ def get_current_user(token: str = Depends(oauth2_scheme), db: Session = Depends(
     if user is None:
         raise HTTPException(status_code=401, detail="User not found")
     return user
+
+# ----------------------
+# AI ANALYSIS ROUTE
+# ----------------------
+# Add this to your main FastAPI app instance (usually in main.py)
+# If this code is in a separate file, import 'app' or use an APIRouter.
+
+def add_ai_routes(app):
+    @app.post("/admin/analyze-location")
+    async def analyze_location(data: dict = Body(...)):
+        lat = data.get("latitude")
+        lon = data.get("longitude")
+        
+        if not lat or not lon:
+            raise HTTPException(status_code=400, detail="Latitude and Longitude required")
+
+        # The Prompt: instructing Gemini to act as an emergency dispatcher
+        prompt = f"""
+        Emergency SOS triggered at: Lat {lat}, Lon {lon}.
+        Please provide:
+        1. Names of the 2 nearest hospitals and 1 police station.
+        2. A description of the geographical area (urban, highway, residential, etc.).
+        3. A critical recommendation for emergency dispatchers.
+        
+        Format the response in short, clear bullet points for an admin dashboard.
+        """
+        
+        try:
+            response = ai_model.generate_content(prompt)
+            return {"analysis": response.text}
+        except Exception as e:
+            # Fallback if the AI fails or the key is restricted
+            return {"analysis": "AI Analysis is currently unavailable. Please proceed with manual dispatch."}

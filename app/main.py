@@ -3,7 +3,7 @@ import uuid
 from datetime import datetime, timedelta
 from typing import List
 
-from fastapi import FastAPI, Depends, HTTPException, status
+from fastapi import FastAPI, Depends, HTTPException, status, Body
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 from sqlalchemy import create_engine, Column, String, Float, ForeignKey, DateTime, TypeDecorator
@@ -14,9 +14,11 @@ from passlib.context import CryptContext
 from jose import jwt, JWTError
 from pydantic import BaseModel
 
+# --- ADDED: GEMINI IMPORT ---
+import google.generativeai as genai
+
 # ---------------- CONFIG ----------------
 
-# Fixed getenv: first arg is key, second is default value
 DEFAULT_DB = "postgresql://neondb_owner:npg_jiyeGI6W5Lfl@ep-winter-feather-a41vs75x-pooler.us-east-1.aws.neon.tech/SOS?sslmode=require"
 DATABASE_URL = os.getenv("DATABASE_URL", DEFAULT_DB)
 
@@ -27,6 +29,12 @@ SECRET_KEY = os.getenv("SECRET_KEY", "SUPER_SECRET_KEY_CHANGE_ME")
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = 60 * 24 
 
+# --- ADDED: GEMINI CONFIG ---
+GEMINI_API_KEY = "AIzaSyDFOvK8Y863TiKYjTnhD4oB0tfbSisiAhs"
+genai.configure(api_key=GEMINI_API_KEY)
+# Using 1.5-flash for speed and lower latency in emergencies
+model = genai.GenerativeModel('gemini-1.5-flash')
+
 # ---------------- DATABASE ----------------
 
 engine = create_engine(DATABASE_URL)
@@ -34,24 +42,6 @@ SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 Base = declarative_base()
 
 # ---------------- MODELS ----------------
-
-# Cross-platform UUID support (works on SQLite and Postgres)
-class GUID(TypeDecorator):
-    impl = String
-    cache_ok = True
-    def load_dialect_impl(self, dialect):
-        if dialect.name == 'postgresql':
-            return dialect.type_descriptor(PG_UUID(as_uuid=True))
-        else:
-            return dialect.type_descriptor(String(36))
-
-    def process_bind_param(self, value, dialect):
-        if value is None: return value
-        return str(value)
-
-    def process_result_value(self, value, dialect):
-        if value is None: return value
-        return uuid.UUID(value)
 
 class User(Base):
     __tablename__ = "users"
@@ -126,7 +116,6 @@ def get_current_user(token: str = Depends(oauth2_scheme), db: Session = Depends(
         user_id_str: str = payload.get("sub")
         if user_id_str is None:
             raise credentials_exception
-        # Convert string sub back to UUID object for SQLAlchemy
         user_id = uuid.UUID(user_id_str)
     except (JWTError, ValueError):
         raise credentials_exception
@@ -172,7 +161,6 @@ def register(user: UserCreate, db: Session = Depends(get_db)):
 
 @app.post("/auth/login", response_model=Token)
 def login(form_data: OAuth2PasswordRequestForm = Depends(), db: Session = Depends(get_db)):
-    # Using phone as the username in the form
     user = db.query(User).filter(User.phone == form_data.username).first()
     if not user or not verify_password(form_data.password, user.hashed_password):
         raise HTTPException(status_code=401, detail="Invalid credentials")
@@ -195,9 +183,37 @@ def create_sos(sos: SOSCreate, user: User = Depends(get_current_user), db: Sessi
 @app.get("/sos/my-alerts")
 def my_alerts(user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     return db.query(SOSAlert).filter(SOSAlert.user_id == user.id).all()
+
 # ---------------- ADMIN ROUTES ----------------
 
 @app.get("/admin/all-alerts")
 def get_all_alerts(db: Session = Depends(get_db)):
-    # In a real app, you'd add a security check here to ensure only admins can see this
     return db.query(SOSAlert).order_by(SOSAlert.created_at.desc()).all()
+
+# --- ADDED: GEMINI ANALYSIS ROUTE ---
+
+@app.post("/admin/analyze-location")
+async def analyze_location(data: dict = Body(...)):
+    lat = data.get("latitude")
+    lon = data.get("longitude")
+    
+    if not lat or not lon:
+        raise HTTPException(status_code=400, detail="Latitude and Longitude required")
+
+    # Prompt Engineering for Emergency Response
+    prompt = f"""
+    Emergency SOS triggered at coordinates: Latitude {lat}, Longitude {lon}.
+    Acting as an Emergency Dispatch AI, provide the following:
+    1. Identify the 2 nearest major hospitals and 1 nearest police station.
+    2. Analyze the terrain/surroundings (e.g., urban, highway, residential, forest).
+    3. Suggest a 1-sentence action priority for first responders.
+    
+    Format the response in clear, concise bullet points for an Admin Panel.
+    """
+    
+    try:
+        response = model.generate_content(prompt)
+        return {"analysis": response.text}
+    except Exception as e:
+        # Fallback in case of API failure
+        return {"analysis": "AI Service unavailable. Please check the coordinates manually on Google Maps."}
