@@ -192,6 +192,8 @@ def get_all_alerts(db: Session = Depends(get_db)):
 
 # --- ADDED: GEMINI ANALYSIS ROUTE ---
 
+import time # Add at top
+
 @app.post("/admin/analyze-location")
 async def analyze_location(data: dict = Body(...)):
     lat = data.get("latitude")
@@ -200,20 +202,17 @@ async def analyze_location(data: dict = Body(...)):
     if not lat or not lon:
         raise HTTPException(status_code=400, detail="Latitude and Longitude required")
 
-    # Prompt Engineering for Emergency Response
-    prompt = f"""
-    Emergency SOS triggered at coordinates: Latitude {lat}, Longitude {lon}.
-    Acting as an Emergency Dispatch AI, provide the following:
-    1. Identify the 2 nearest major hospitals and 1 nearest police station.
-    2. Analyze the terrain/surroundings (e.g., urban, highway, residential, forest).
-    3. Suggest a 1-sentence action priority for first responders.
-    
-    Format the response in clear, concise bullet points for an Admin Panel.
-    """
-    
-    try:
-        response = model.generate_content(prompt)
-        return {"analysis": response.text}
-    except Exception as e:
-        # Fallback in case of API failure
-        return {"analysis": "AI Service unavailable. Please check the coordinates manually on Google Maps."}
+    prompt = f"Emergency SOS at Lat {lat}, Lon {lon}. List 2 nearest hospitals and 1 police station."
+
+    # --- RETRY LOGIC ---
+    max_retries = 3
+    for attempt in range(max_retries):
+        try:
+            response = model.generate_content(prompt)
+            return {"analysis": response.text}
+        except Exception as e:
+            if attempt < max_retries - 1:
+                time.sleep(2)  # Wait 2 seconds before trying again
+                continue
+            else:
+                return {"analysis": "AI Service busy. Please check coordinates manually: " + f"https://www.google.com/maps?q={lat},{lon}"}
