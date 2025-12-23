@@ -206,9 +206,9 @@ async def analyze_location(data: dict = Body(...)):
     try:
         # Using the new SDK's generation method
         response = client.models.generate_content(
-            model='gemini-2.0-flash', # Uses the 2025 ultra-fast model
+            model='gemini-2.5-flash-lite',
             contents=prompt
-        )
+)
         return {"analysis": response.text}
     except Exception as e:
         print(f"AI Error: {e}")
