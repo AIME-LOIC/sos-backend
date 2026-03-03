@@ -23,6 +23,10 @@ const el = {
   triggerSOSBig: document.getElementById("triggerSOSBig"),
   locationState: document.getElementById("locationState"),
   lastSend: document.getElementById("lastSend"),
+  deviceLinkForm: document.getElementById("deviceLinkForm"),
+  deviceUid: document.getElementById("deviceUid"),
+  deviceName: document.getElementById("deviceName"),
+  deviceTokenInfo: document.getElementById("deviceTokenInfo"),
 
   refreshHistory: document.getElementById("refreshHistory"),
   historyList: document.getElementById("historyList"),
@@ -162,6 +166,21 @@ async function loadHistory() {
   }
 }
 
+async function refreshDeviceInfo() {
+  if (!state.token || !el.deviceTokenInfo) return;
+  try {
+    const devices = await request("/devices/my");
+    if (!Array.isArray(devices) || devices.length === 0) {
+      el.deviceTokenInfo.textContent = "No device connected yet.";
+      return;
+    }
+    const d = devices[0];
+    el.deviceTokenInfo.textContent = `Linked: ${d.device_uid} | Token: ${d.device_token}`;
+  } catch (error) {
+    el.deviceTokenInfo.textContent = "Could not load device info.";
+  }
+}
+
 if (el.saveBase && el.apiBase) {
   el.saveBase.addEventListener("click", () => {
     state.baseUrl = el.apiBase.value.trim().replace(/\/$/, "") || window.location.origin;
@@ -186,6 +205,7 @@ el.loginForm.addEventListener("submit", async (e) => {
     state.token = data.access_token || "";
     saveState();
     updateTopRow();
+    refreshDeviceInfo();
     setHash("/app");
     flash("Logged in.");
   } catch (error) {
@@ -211,6 +231,7 @@ el.registerForm.addEventListener("submit", async (e) => {
     state.token = data.access_token || "";
     saveState();
     updateTopRow();
+    refreshDeviceInfo();
     setHash("/app");
     flash("Account created.");
   } catch (error) {
@@ -218,10 +239,31 @@ el.registerForm.addEventListener("submit", async (e) => {
   }
 });
 
+if (el.deviceLinkForm) {
+  el.deviceLinkForm.addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const payload = {
+      device_uid: String(el.deviceUid.value || "").trim(),
+      device_name: String(el.deviceName.value || "").trim() || null,
+    };
+    try {
+      const data = await request("/devices/link", {
+        method: "POST",
+        body: JSON.stringify(payload),
+      });
+      el.deviceTokenInfo.textContent = `Linked: ${data.device_uid} | Token: ${data.device_token}`;
+      flash("Device connected. Copy token to NodeMCU firmware.");
+    } catch (error) {
+      flash(`Device link failed: ${error.message}`, "err");
+    }
+  });
+}
+
 function logout() {
   state.token = "";
   saveState();
   updateTopRow();
+  if (el.deviceTokenInfo) el.deviceTokenInfo.textContent = "No device connected yet.";
   setHash("/login");
   flash("Logged out.");
 }
@@ -246,4 +288,5 @@ updateTopRow();
 setLocationUI();
 if (!location.hash) setHash(state.token ? "/app" : "/login");
 guardRoute();
+refreshDeviceInfo();
 flash("Ready.");

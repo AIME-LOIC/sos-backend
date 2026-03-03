@@ -67,6 +67,17 @@ class SOSAlert(Base):
     status = Column(String, default="active")
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
+class Device(Base):
+    __tablename__ = "devices"
+    id = Column(PG_UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    device_uid = Column(String, unique=True, nullable=False, index=True)
+    device_name = Column(String, nullable=True)
+    device_token = Column(String, nullable=False)
+    owner_user_id = Column(PG_UUID(as_uuid=True), ForeignKey("users.id"), nullable=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+    last_seen_at = Column(DateTime(timezone=True), nullable=True)
+
 Base.metadata.create_all(bind=engine)
 
 # ---------------- SCHEMAS ----------------
@@ -85,6 +96,17 @@ class SOSCreate(BaseModel):
 class Token(BaseModel):
     access_token: str
     token_type: str
+
+class DeviceLinkRequest(BaseModel):
+    device_uid: str
+    device_name: str | None = None
+
+class DeviceSOSCreate(BaseModel):
+    device_uid: str
+    device_token: str
+    latitude: float
+    longitude: float
+    battery: str | None = None
 
 # ---------------- SECURITY ----------------
 
@@ -112,6 +134,9 @@ def hash_password(password: str):
     salt_b64 = base64.urlsafe_b64encode(salt).decode("ascii").rstrip("=")
     digest_b64 = base64.urlsafe_b64encode(digest).decode("ascii").rstrip("=")
     return f"{PBKDF2_PREFIX}${PBKDF2_ITERATIONS}${salt_b64}${digest_b64}"
+
+def generate_device_token() -> str:
+    return secrets.token_urlsafe(24)
 
 def verify_password(password, hashed):
     if isinstance(hashed, str) and hashed.startswith(f"{PBKDF2_PREFIX}$"):
@@ -223,6 +248,82 @@ def create_sos(sos: SOSCreate, user: User = Depends(get_current_user), db: Sessi
 @app.get("/sos/my-alerts")
 def my_alerts(user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     return db.query(SOSAlert).filter(SOSAlert.user_id == user.id).all()
+
+@app.post("/devices/link")
+def link_device(data: DeviceLinkRequest, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    device_uid = data.device_uid.strip()
+    if not device_uid:
+        raise HTTPException(status_code=400, detail="device_uid is required")
+
+    device = db.query(Device).filter(Device.device_uid == device_uid).first()
+    if device:
+        if device.owner_user_id and device.owner_user_id != user.id:
+            raise HTTPException(status_code=409, detail="Device is already linked to another user")
+        device.owner_user_id = user.id
+        if data.device_name:
+            device.device_name = data.device_name
+        if not device.device_token:
+            device.device_token = generate_device_token()
+    else:
+        device = Device(
+            device_uid=device_uid,
+            device_name=data.device_name,
+            device_token=generate_device_token(),
+            owner_user_id=user.id,
+        )
+        db.add(device)
+
+    db.commit()
+    db.refresh(device)
+    return {
+        "device_uid": device.device_uid,
+        "device_name": device.device_name,
+        "device_token": device.device_token,
+        "owner_user_id": device.owner_user_id,
+        "last_seen_at": device.last_seen_at,
+    }
+
+@app.get("/devices/my")
+def my_devices(user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    devices = db.query(Device).filter(Device.owner_user_id == user.id).order_by(Device.created_at.desc()).all()
+    return [
+        {
+            "device_uid": d.device_uid,
+            "device_name": d.device_name,
+            "device_token": d.device_token,
+            "last_seen_at": d.last_seen_at,
+            "created_at": d.created_at,
+        }
+        for d in devices
+    ]
+
+@app.post("/device/sos")
+def create_sos_from_device(payload: DeviceSOSCreate, db: Session = Depends(get_db)):
+    device_uid = payload.device_uid.strip()
+    device = db.query(Device).filter(Device.device_uid == device_uid).first()
+    if not device:
+        raise HTTPException(status_code=404, detail="Unknown device")
+    if device.device_token != payload.device_token:
+        raise HTTPException(status_code=401, detail="Invalid device token")
+    if not device.owner_user_id:
+        raise HTTPException(status_code=400, detail="Device is not linked to a user")
+
+    alert = SOSAlert(
+        user_id=device.owner_user_id,
+        latitude=payload.latitude,
+        longitude=payload.longitude,
+    )
+    db.add(alert)
+    device.last_seen_at = datetime.utcnow()
+    db.commit()
+    db.refresh(alert)
+
+    return {
+        "message": "SOS received from device",
+        "sos_id": alert.id,
+        "user_id": device.owner_user_id,
+        "device_uid": device.device_uid,
+    }
 
 # ---------------- ADMIN ROUTES ----------------
 

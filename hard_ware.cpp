@@ -1,57 +1,98 @@
 #include <ESP8266WiFi.h>
 #include <ESP8266HTTPClient.h>
-#include <WiFiClient.h>
+#include <WiFiClientSecure.h>
 
-const char* ssid = "L4SODA&B";
-const char* password = "l4sod@2026!";
+// ---------------- CONFIG ----------------
+const char* ssid = "PUT_WIFI_SSID";
+const char* password = "PUT_WIFI_PASSWORD";
 
-// Your specific Make.com Webhook URL
-const char* makeUrl = "http://jnqsf3qvs7cxjhmmhrc5p8eehgbmf5lh@hook.eu1.make.com";
+const char* backendBaseUrl = "https://sos-backend-q0h6.onrender.com";
+const char* deviceSosEndpoint = "/device/sos";
 
-const int buttonPin = 4; // This is Pin D2 on most NodeMCUs
+// Get this from app after linking device UID.
+String deviceToken = "PUT_DEVICE_TOKEN_HERE";
 
-void setup() {
-  Serial.begin(115200);
-  pinMode(buttonPin, INPUT_PULLUP); // Button connected to D2 and Ground
-  
+// Hardware pins
+const int buttonPin = 4; // D2 on NodeMCU
+
+// Demo coordinates (replace with GPS sensor values if available)
+const float fallbackLat = -1.9441;
+const float fallbackLon = 30.0619;
+
+// ---------------- HELPERS ----------------
+String deviceUid() {
+  return "NODEMCU_" + String(ESP.getChipId(), HEX);
+}
+
+void ensureWifi() {
+  if (WiFi.status() == WL_CONNECTED) return;
   WiFi.begin(ssid, password);
-  Serial.print("Connecting to WiFi");
+  Serial.print("WiFi connecting");
   while (WiFi.status() != WL_CONNECTED) {
     delay(500);
     Serial.print(".");
   }
-  Serial.println("\nConnected!");
+  Serial.println("\nWiFi connected");
+}
+
+bool sendSOS(float lat, float lon) {
+  if (deviceToken.length() == 0 || deviceToken == "PUT_DEVICE_TOKEN_HERE") {
+    Serial.println("Missing device token. Link device in app first.");
+    return false;
+  }
+
+  WiFiClientSecure client;
+  client.setInsecure();
+  HTTPClient http;
+  String url = String(backendBaseUrl) + String(deviceSosEndpoint);
+
+  if (!http.begin(client, url)) {
+    Serial.println("HTTP begin failed");
+    return false;
+  }
+
+  http.addHeader("Content-Type", "application/json");
+  String payload = String("{\"device_uid\":\"") + deviceUid() +
+                   "\",\"device_token\":\"" + deviceToken +
+                   "\",\"latitude\":" + String(lat, 6) +
+                   ",\"longitude\":" + String(lon, 6) + "}";
+
+  int code = http.POST(payload);
+  String body = http.getString();
+  http.end();
+
+  Serial.print("POST /device/sos => ");
+  Serial.println(code);
+  Serial.println(body);
+  return code >= 200 && code < 300;
+}
+
+// ---------------- ARDUINO ----------------
+void setup() {
+  Serial.begin(9600); // Easier serial monitor compatibility
+  delay(200);
+  Serial.println("\nBOOT OK");
+
+  pinMode(buttonPin, INPUT_PULLUP);
+  ensureWifi();
+
+  Serial.print("Device UID: ");
+  Serial.println(deviceUid());
+  Serial.println("Link this UID in app, then set deviceToken and re-upload.");
 }
 
 void loop() {
-  // Detect button press (Low means the button is pressed to Ground)
+  ensureWifi();
+
   if (digitalRead(buttonPin) == LOW) {
-    Serial.println("SOS Button Pressed! Sending to Make.com...");
-    
-    if (WiFi.status() == WL_CONNECTED) {
-      WiFiClient client;
-      HTTPClient http;
-      
-      http.begin(client, makeUrl);
-      http.addHeader("Content-Type", "application/json");
-      
-      // We send a JSON package so Make.com knows what happened
-      String jsonPayload = "{\"event\":\"SOS_TRIGGERED\", \"device\":\"V1_Hardware\", \"battery\":\"OK\"}";
-      
-      int httpResponseCode = http.POST(jsonPayload);
-      
-      if (httpResponseCode > 0) {
-        Serial.print("Success! Response code: ");
-        Serial.println(httpResponseCode);
-      } else {
-        Serial.print("Error sending POST: ");
-        Serial.println(http.errorToString(httpResponseCode).c_str());
-      }
-      
-      http.end();
-    }
-    
-    // Cool-down period to prevent multiple alerts from one press
-    delay(10000); 
+    Serial.println("Button pressed -> sending SOS...");
+    bool ok = sendSOS(fallbackLat, fallbackLon);
+    if (ok) Serial.println("SOS sent");
+    else Serial.println("SOS failed");
+
+    // Cooldown/debounce
+    delay(10000);
   }
+
+  delay(60);
 }

@@ -56,6 +56,17 @@
           <p id="lastSend" class="small">No alert sent yet.</p>
         </div>
       </article>
+
+      <article class="card device-card">
+        <h3>Connect NodeMCU Device</h3>
+        <p class="small">Enter the device ID shown in NodeMCU serial output, then copy token into firmware.</p>
+        <form id="deviceLinkForm" class="stack">
+          <label>Device UID<input id="deviceUid" name="device_uid" placeholder="NODEMCU_xxxxxx" required /></label>
+          <label>Device Name (optional)<input id="deviceName" name="device_name" placeholder="Car unit / Home unit" /></label>
+          <button type="submit">Connect Device</button>
+        </form>
+        <p id="deviceTokenInfo" class="small">No device connected yet.</p>
+      </article>
     </section>
 
     <section id="routeHistory" class="page app-page">

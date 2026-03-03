@@ -45,6 +45,7 @@ main { min-height: 100vh; }
   border-radius: 14px;
   padding: 1rem;
 }
+.card h3 { margin: 0 0 0.55rem; }
 
 .auth-card { width: 100%; max-width: 430px; }
 .auth-card h1 { margin: 0 0 0.75rem; }
@@ -79,6 +80,7 @@ button.ghost { background: #eef3f9; color: #1d3249; }
 .row.between { justify-content: space-between; }
 
 .app-card { text-align: center; }
+.device-card { text-align: left; }
 
 .sos-button {
   width: min(88vw, 420px);
