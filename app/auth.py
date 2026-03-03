@@ -1,4 +1,8 @@
 import os
+import base64
+import hashlib
+import hmac
+import secrets
 import google.generativeai as genai
 from passlib.context import CryptContext
 from datetime import datetime, timedelta
@@ -28,12 +32,41 @@ ACCESS_TOKEN_EXPIRE_MINUTES = 60
 # Password Hashing
 # ----------------------
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+PBKDF2_PREFIX = "pbkdf2_sha256"
+PBKDF2_ITERATIONS = 390000
 
 def hash_password(password: str):
-    return pwd_context.hash(password)
+    salt = secrets.token_bytes(16)
+    digest = hashlib.pbkdf2_hmac(
+        "sha256",
+        password.encode("utf-8"),
+        salt,
+        PBKDF2_ITERATIONS,
+    )
+    salt_b64 = base64.urlsafe_b64encode(salt).decode("ascii").rstrip("=")
+    digest_b64 = base64.urlsafe_b64encode(digest).decode("ascii").rstrip("=")
+    return f"{PBKDF2_PREFIX}${PBKDF2_ITERATIONS}${salt_b64}${digest_b64}"
 
 def verify_password(plain_password, hashed_password):
-    return pwd_context.verify(plain_password, hashed_password)
+    if isinstance(hashed_password, str) and hashed_password.startswith(f"{PBKDF2_PREFIX}$"):
+        try:
+            _, iterations, salt_b64, digest_b64 = hashed_password.split("$", 3)
+            pad = lambda s: s + "=" * (-len(s) % 4)
+            salt = base64.urlsafe_b64decode(pad(salt_b64))
+            expected = base64.urlsafe_b64decode(pad(digest_b64))
+            computed = hashlib.pbkdf2_hmac(
+                "sha256",
+                plain_password.encode("utf-8"),
+                salt,
+                int(iterations),
+            )
+            return hmac.compare_digest(computed, expected)
+        except Exception:
+            return False
+    try:
+        return pwd_context.verify(plain_password, hashed_password)
+    except Exception:
+        return False
 
 # ----------------------
 # JWT Token Creation

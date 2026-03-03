@@ -1,0 +1,83 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>SOS App</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;700&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="./styles.css" />
+</head>
+<body>
+  <main>
+    <section id="routeLogin" class="page auth-page">
+      <article class="card auth-card">
+        <h1>Login</h1>
+        <form id="loginForm" class="stack">
+          <label>Phone number<input name="phone" required /></label>
+          <label>Password<input name="password" type="password" required /></label>
+          <button type="submit">Sign In</button>
+        </form>
+        <p class="linkline">No account? <a href="#/signup">Sign up</a></p>
+      </article>
+    </section>
+
+    <section id="routeSignup" class="page auth-page">
+      <article class="card auth-card">
+        <h1>Sign Up</h1>
+        <form id="registerForm" class="stack">
+          <label>Full name<input name="full_name" required /></label>
+          <label>Blood type<input name="blood_type" required /></label>
+          <label>Phone number<input name="phone" required /></label>
+          <label>Emergency contact<input name="emergency_contact" required /></label>
+          <label>Password<input name="password" type="password" required /></label>
+          <button type="submit">Create Account</button>
+        </form>
+        <p class="linkline">Already have account? <a href="#/login">Login</a></p>
+      </article>
+    </section>
+
+    <section id="routeApp" class="page app-page">
+      <header class="app-top">
+        <h2>SOS SYSTEM</h2>
+        <nav class="top-actions">
+          <button id="goHistory" type="button">History</button>
+          <button id="logoutBtn" type="button" class="ghost">Logout</button>
+        </nav>
+      </header>
+
+      <article class="card app-card">
+        <p id="locationState" class="small">Location: unknown</p>
+        <button id="triggerSOSBig" type="button" class="sos-button">SEND SOS</button>
+        <div class="row">
+          <button id="detectLocation" type="button">Update Location</button>
+          <p id="lastSend" class="small">No alert sent yet.</p>
+        </div>
+      </article>
+    </section>
+
+    <section id="routeHistory" class="page app-page">
+      <header class="app-top">
+        <h2>HISTORY</h2>
+        <nav class="top-actions">
+          <button id="goApp" type="button">Back</button>
+          <button id="logoutBtn2" type="button" class="ghost">Logout</button>
+        </nav>
+      </header>
+
+      <article class="card history-card">
+        <div class="row between">
+          <p class="small">Recent SOS requests</p>
+          <button id="refreshHistory" type="button">Refresh</button>
+        </div>
+        <ul id="historyList" class="history-list"></ul>
+      </article>
+    </section>
+
+    <p id="flash" class="flash" aria-live="polite"></p>
+  </main>
+
+  <script src="./app.js"></script>
+</body>
+</html>

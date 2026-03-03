@@ -1,10 +1,16 @@
 import os
 import uuid
+import base64
+import hashlib
+import hmac
+import secrets
 from datetime import datetime, timedelta
+from pathlib import Path
 from typing import List
 
 from fastapi import FastAPI, Depends, HTTPException, status, Body
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 from sqlalchemy import create_engine, Column, String, Float, ForeignKey, DateTime, TypeDecorator
 from sqlalchemy.orm import sessionmaker, declarative_base, Session
@@ -84,6 +90,8 @@ class Token(BaseModel):
 
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="auth/login")
+PBKDF2_PREFIX = "pbkdf2_sha256"
+PBKDF2_ITERATIONS = 390000
 
 def get_db():
     db = SessionLocal()
@@ -93,10 +101,40 @@ def get_db():
         db.close()
 
 def hash_password(password: str):
-    return pwd_context.hash(password)
+    # Use stdlib PBKDF2 to avoid bcrypt backend/runtime incompatibilities.
+    salt = secrets.token_bytes(16)
+    digest = hashlib.pbkdf2_hmac(
+        "sha256",
+        password.encode("utf-8"),
+        salt,
+        PBKDF2_ITERATIONS,
+    )
+    salt_b64 = base64.urlsafe_b64encode(salt).decode("ascii").rstrip("=")
+    digest_b64 = base64.urlsafe_b64encode(digest).decode("ascii").rstrip("=")
+    return f"{PBKDF2_PREFIX}${PBKDF2_ITERATIONS}${salt_b64}${digest_b64}"
 
 def verify_password(password, hashed):
-    return pwd_context.verify(password, hashed)
+    if isinstance(hashed, str) and hashed.startswith(f"{PBKDF2_PREFIX}$"):
+        try:
+            _, iterations, salt_b64, digest_b64 = hashed.split("$", 3)
+            pad = lambda s: s + "=" * (-len(s) % 4)
+            salt = base64.urlsafe_b64decode(pad(salt_b64))
+            expected = base64.urlsafe_b64decode(pad(digest_b64))
+            computed = hashlib.pbkdf2_hmac(
+                "sha256",
+                password.encode("utf-8"),
+                salt,
+                int(iterations),
+            )
+            return hmac.compare_digest(computed, expected)
+        except Exception:
+            return False
+
+    # Backward compatibility for existing bcrypt hashes in DB.
+    try:
+        return pwd_context.verify(password, hashed)
+    except Exception:
+        return False
 
 def create_access_token(data: dict):
     to_encode = data.copy()
@@ -135,6 +173,9 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+WEB_DIR = Path(__file__).resolve().parent.parent / "web"
+app.mount("/web", StaticFiles(directory=str(WEB_DIR), html=True), name="web")
 
 # ---------------- ROUTES ----------------
 
