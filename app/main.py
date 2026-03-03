@@ -256,6 +256,26 @@ def get_all_alerts(db: Session = Depends(get_db)):
         for alert, user in rows
     ]
 
+@app.get("/admin/user/{user_id}")
+def get_user_for_admin(user_id: str, db: Session = Depends(get_db)):
+    try:
+        user_uuid = uuid.UUID(user_id)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid user id")
+
+    user = db.query(User).filter(User.id == user_uuid).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    return {
+        "id": user.id,
+        "full_name": user.full_name,
+        "blood_type": user.blood_type,
+        "phone": user.phone,
+        "emergency_contact": user.emergency_contact,
+        "role": user.role,
+    }
+
 # --- ADDED: GEMINI ANALYSIS ROUTE ---
 
 import time # Add at top
