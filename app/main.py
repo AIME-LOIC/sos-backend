@@ -228,7 +228,33 @@ def my_alerts(user: User = Depends(get_current_user), db: Session = Depends(get_
 
 @app.get("/admin/all-alerts")
 def get_all_alerts(db: Session = Depends(get_db)):
-    return db.query(SOSAlert).order_by(SOSAlert.created_at.desc()).all()
+    rows = (
+        db.query(SOSAlert, User)
+        .join(User, SOSAlert.user_id == User.id)
+        .order_by(SOSAlert.created_at.desc())
+        .all()
+    )
+    return [
+        {
+            "id": alert.id,
+            "user_id": alert.user_id,
+            "full_name": user.full_name,
+            "phone": user.phone,
+            "user": {
+                "id": user.id,
+                "full_name": user.full_name,
+                "blood_type": user.blood_type,
+                "phone": user.phone,
+                "emergency_contact": user.emergency_contact,
+                "role": user.role,
+            },
+            "latitude": alert.latitude,
+            "longitude": alert.longitude,
+            "status": alert.status,
+            "created_at": alert.created_at,
+        }
+        for alert, user in rows
+    ]
 
 # --- ADDED: GEMINI ANALYSIS ROUTE ---
 
