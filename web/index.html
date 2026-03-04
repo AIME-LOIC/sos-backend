@@ -300,18 +300,20 @@ button.ghost { background: var(--primary-soft); color: #1d3249; }
   .device-grid { grid-template-columns: 1fr; }
 }
 
-/* Guardian-style visual overrides */
+/* SOS-style visual overrides */
 body {
   background: linear-gradient(180deg, #edf1f6 0%, #e5e8ed 100%);
 }
 
 .shell {
-  width: min(1160px, 100%);
-  padding: 0 0.6rem;
+  width: 100%;
+  margin: 0;
+  padding: 0;
 }
 
 .app-page {
   gap: 0;
+  padding: 0;
 }
 
 .app-top {
@@ -406,15 +408,16 @@ body {
   border-radius: 0 0 14px 14px;
   border-top: 0;
   display: grid;
-  align-content: center;
-  justify-items: center;
+  align-content: start;
+  justify-items: stretch;
   gap: 0.55rem;
+  padding: 1.1rem 1.25rem 1.4rem;
   box-shadow: 0 12px 30px rgba(16, 24, 39, 0.06);
 }
 
 .sos-button {
   width: min(72vw, 300px);
-  margin: 0.15rem auto 0.1rem;
+  margin: 0.5rem auto 0.1rem;
   display: grid;
   align-content: center;
   justify-items: center;
@@ -435,27 +438,34 @@ body {
 }
 
 .focus-title {
-  margin: 0.8rem 0 0;
+  margin: 0.5rem 0 0;
   font-size: clamp(1.7rem, 3vw, 2.2rem);
   font-weight: 800;
   color: #1d273a;
+  text-align: left;
 }
 
 .focus-sub {
   margin: 0;
   color: #677892;
   font-size: 1rem;
+  text-align: left;
 }
 
 .hold-hint {
   color: #677892;
   margin-top: 0.15rem;
+  text-align: left;
 }
 
 .center-row button {
   background: #edf3ff;
   color: #365173;
   border: 1px solid #c8d8f8;
+}
+
+.center-row {
+  justify-content: flex-start;
 }
 
 .history-card {
@@ -531,7 +541,7 @@ body {
       <header class="app-top">
         <div class="brand-area">
           <span class="brand-shield" aria-hidden="true"></span>
-          <h2>Guardian</h2>
+          <h2>SOS</h2>
           <div class="status-inline">
             <span id="wsStatus" class="pill">Realtime: connecting</span>
             <span id="autoSyncStatus" class="pill">Auto Sync: off</span>
@@ -540,7 +550,7 @@ body {
         <nav class="top-actions">
           <span class="nav-home">Home</span>
           <button id="goHistory" type="button">History</button>
-          <button id="goDevices" type="button">Contacts</button>
+          <button id="goDevices" type="button">Devices</button>
           <button id="logoutBtn" type="button" class="ghost">Logout</button>
         </nav>
         <div class="system-state">SYSTEM READY</div>
@@ -569,12 +579,12 @@ body {
       <header class="app-top">
         <div class="brand-area">
           <span class="brand-shield" aria-hidden="true"></span>
-          <h2>Guardian</h2>
+          <h2>SOS</h2>
         </div>
         <nav class="top-actions">
           <button id="goApp" type="button">Home</button>
           <span class="nav-home">History</span>
-          <button id="goDevicesFromHistory" type="button">Contacts</button>
+          <button id="goDevicesFromHistory" type="button">Devices</button>
           <button id="logoutBtn2" type="button" class="ghost">Logout</button>
         </nav>
         <span class="close-link">× Close</span>
