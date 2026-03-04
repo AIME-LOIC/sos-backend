@@ -6,6 +6,8 @@
 
 // ---------- Device Behavior ----------
 const int buttonPin = 4; // D2 (GPIO4), INPUT_PULLUP, pressed = LOW
+const int redLedPin = 14;   // D5 (GPIO14) - change if your wiring is different
+const int greenLedPin = 12; // D6 (GPIO12) - change if your wiring is different
 const unsigned long debounceMs = 60;
 const unsigned long wifiRetryMs = 8000;
 
@@ -34,6 +36,18 @@ int lastReading = HIGH;
 int stableState = HIGH;
 unsigned long lastEdgeAt = 0;
 unsigned long lastWifiTryAt = 0;
+
+void setLeds(bool redOn, bool greenOn) {
+  digitalWrite(redLedPin, redOn ? HIGH : LOW);
+  digitalWrite(greenLedPin, greenOn ? HIGH : LOW);
+}
+
+void blinkBothLeds(unsigned long delayMs = 180) {
+  static bool on = false;
+  on = !on;
+  setLeds(on, on);
+  delay(delayMs);
+}
 
 String deviceUid() {
   return "NODEMCU_" + String(ESP.getChipId(), HEX);
@@ -100,10 +114,12 @@ bool connectWifi(uint32_t timeoutMs = 20000) {
 
   WiFi.begin(cfg.wifiSsid, cfg.wifiPass);
   Serial.print("WiFi connecting");
+  // While connecting, blink both LEDs.
+  setLeds(false, false);
 
   unsigned long start = millis();
   while (WiFi.status() != WL_CONNECTED && millis() - start < timeoutMs) {
-    delay(400);
+    blinkBothLeds(180);
     Serial.print(".");
   }
   Serial.println();
@@ -112,9 +128,13 @@ bool connectWifi(uint32_t timeoutMs = 20000) {
     Serial.println("WiFi connected");
     Serial.print("IP: ");
     Serial.println(WiFi.localIP());
+    // Ready/normal state => green ON.
+    setLeds(false, true);
     return true;
   }
   Serial.println("WiFi connect failed");
+  // Connection fail => red ON.
+  setLeds(true, false);
   return false;
 }
 
@@ -190,8 +210,12 @@ void startConfigPortal() {
 bool sendSOS(float lat, float lon) {
   if (strlen(cfg.deviceToken) == 0) {
     Serial.println("Missing device token. Open setup portal.");
+    setLeds(true, false);
     return false;
   }
+
+  // Sending state => both OFF.
+  setLeds(false, false);
 
   // Reduce RAM pressure for TLS by temporarily switching from AP+STA to STA.
   WiFiMode_t prevMode = WiFi.getMode();
@@ -235,6 +259,7 @@ bool sendSOS(float lat, float lon) {
       WiFi.softAP(apName.c_str(), "12345678");
       server.begin();
     }
+    setLeds(true, false);
     return false;
   }
 
@@ -267,9 +292,19 @@ bool sendSOS(float lat, float lon) {
   if (shouldClearTokenOnResponse(code, body)) {
     Serial.println("Device token is invalid or device is unlinked.");
     clearDeviceTokenAndWait();
+    setLeds(true, false);
   }
 
-  return code >= 200 && code < 300;
+  bool ok = code >= 200 && code < 300;
+  if (ok) {
+    // Success => green ON.
+    setLeds(false, true);
+  } else {
+    // Fail => red ON.
+    setLeds(true, false);
+  }
+
+  return ok;
 }
 
 void printNetworkDebug() {
@@ -323,6 +358,9 @@ void setup() {
   Serial.println(deviceUid());
 
   pinMode(buttonPin, INPUT_PULLUP);
+  pinMode(redLedPin, OUTPUT);
+  pinMode(greenLedPin, OUTPUT);
+  setLeds(false, false);
   loadConfig();
 
   // Always keep setup AP+portal available.
@@ -336,15 +374,19 @@ void setup() {
 
   if (!hasRequiredConfig()) {
     Serial.println("Missing config. Use setup portal at http://192.168.4.1");
+    setLeds(true, false);
     return;
   }
 
   if (!connectWifi()) {
     Serial.println("WiFi failed. Setup portal still available at http://192.168.4.1");
+    setLeds(true, false);
     return;
   }
 
   Serial.println("Device ready.");
+  // Ready/normal state => green ON.
+  setLeds(false, true);
 }
 
 void loop() {
