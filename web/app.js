@@ -27,6 +27,8 @@ const el = {
   deviceUid: document.getElementById("deviceUid"),
   deviceName: document.getElementById("deviceName"),
   deviceTokenInfo: document.getElementById("deviceTokenInfo"),
+  connectedDeviceBadge: document.getElementById("connectedDeviceBadge"),
+  disconnectDeviceBtn: document.getElementById("disconnectDeviceBtn"),
 
   refreshHistory: document.getElementById("refreshHistory"),
   historyList: document.getElementById("historyList"),
@@ -172,12 +174,20 @@ async function refreshDeviceInfo() {
     const devices = await request("/devices/my");
     if (!Array.isArray(devices) || devices.length === 0) {
       el.deviceTokenInfo.textContent = "No device connected yet.";
+      if (el.connectedDeviceBadge) el.connectedDeviceBadge.textContent = "Device: none";
+      if (el.disconnectDeviceBtn) el.disconnectDeviceBtn.disabled = true;
       return;
     }
     const d = devices[0];
     el.deviceTokenInfo.textContent = `Linked: ${d.device_uid} | Token: ${d.device_token}`;
+    if (el.connectedDeviceBadge) el.connectedDeviceBadge.textContent = `Device: ${d.device_uid}`;
+    if (el.disconnectDeviceBtn) {
+      el.disconnectDeviceBtn.disabled = false;
+      el.disconnectDeviceBtn.dataset.deviceUid = d.device_uid;
+    }
   } catch (error) {
     el.deviceTokenInfo.textContent = "Could not load device info.";
+    if (el.connectedDeviceBadge) el.connectedDeviceBadge.textContent = "Device: unavailable";
   }
 }
 
@@ -259,11 +269,37 @@ if (el.deviceLinkForm) {
   });
 }
 
+if (el.disconnectDeviceBtn) {
+  el.disconnectDeviceBtn.addEventListener("click", async () => {
+    const deviceUid = el.disconnectDeviceBtn.dataset.deviceUid || "";
+    if (!deviceUid) {
+      flash("No connected device to disconnect.", "err");
+      return;
+    }
+    if (!confirm(`Disconnect ${deviceUid}?`)) return;
+    try {
+      await request("/devices/unlink", {
+        method: "POST",
+        body: JSON.stringify({ device_uid: deviceUid }),
+      });
+      flash("Device disconnected.");
+      refreshDeviceInfo();
+    } catch (error) {
+      flash(`Disconnect failed: ${error.message}`, "err");
+    }
+  });
+}
+
 function logout() {
   state.token = "";
   saveState();
   updateTopRow();
   if (el.deviceTokenInfo) el.deviceTokenInfo.textContent = "No device connected yet.";
+  if (el.connectedDeviceBadge) el.connectedDeviceBadge.textContent = "Device: none";
+  if (el.disconnectDeviceBtn) {
+    el.disconnectDeviceBtn.disabled = true;
+    el.disconnectDeviceBtn.dataset.deviceUid = "";
+  }
   setHash("/login");
   flash("Logged out.");
 }

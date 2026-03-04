@@ -108,6 +108,9 @@ class DeviceLinkRequest(BaseModel):
     device_uid: str
     device_name: str | None = None
 
+class DeviceUnlinkRequest(BaseModel):
+    device_uid: str
+
 class DeviceSOSCreate(BaseModel):
     device_uid: str
     device_token: str
@@ -327,6 +330,29 @@ def my_devices(user: User = Depends(get_current_user), db: Session = Depends(get
         }
         for d in devices
     ]
+
+@app.post("/devices/unlink")
+def unlink_my_device(data: DeviceUnlinkRequest, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    device_uid = data.device_uid.strip()
+    if not device_uid:
+        raise HTTPException(status_code=400, detail="device_uid is required")
+
+    device = db.query(Device).filter(Device.device_uid == device_uid).first()
+    if not device:
+        raise HTTPException(status_code=404, detail="Device not found")
+    if device.owner_user_id != user.id:
+        raise HTTPException(status_code=403, detail="You can only unlink your own device")
+
+    device.owner_user_id = None
+    device.device_token = generate_device_token()
+    db.commit()
+    db.refresh(device)
+
+    return {
+        "message": "Device disconnected",
+        "device_uid": device.device_uid,
+        "new_device_token": device.device_token,
+    }
 
 @app.post("/device/sos")
 def create_sos_from_device(payload: DeviceSOSCreate, db: Session = Depends(get_db)):

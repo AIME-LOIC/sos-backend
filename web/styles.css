@@ -35,6 +35,8 @@ main { min-height: 100vh; }
   display: flex;
   justify-content: space-between;
   align-items: center;
+  gap: 0.6rem;
+  flex-wrap: wrap;
 }
 
 .app-top h2 { margin: 0; letter-spacing: 0.04em; }
@@ -109,6 +111,12 @@ button.ghost { background: #eef3f9; color: #1d3249; }
 }
 
 .top-actions { display: flex; gap: 0.5rem; }
+.device-corner {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  margin-left: auto;
+}
 
 .flash {
   position: fixed;
