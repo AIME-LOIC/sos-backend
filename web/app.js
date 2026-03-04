@@ -10,14 +10,20 @@ const el = {
   routeSignup: document.getElementById("routeSignup"),
   routeApp: document.getElementById("routeApp"),
   routeHistory: document.getElementById("routeHistory"),
+  routeDevices: document.getElementById("routeDevices"),
 
   loginForm: document.getElementById("loginForm"),
   registerForm: document.getElementById("registerForm"),
 
   goHistory: document.getElementById("goHistory"),
+  goDevices: document.getElementById("goDevices"),
+  goDevicesFromHistory: document.getElementById("goDevicesFromHistory"),
   goApp: document.getElementById("goApp"),
+  goAppFromDevices: document.getElementById("goAppFromDevices"),
+  goHistoryFromDevices: document.getElementById("goHistoryFromDevices"),
   logoutBtn: document.getElementById("logoutBtn"),
   logoutBtn2: document.getElementById("logoutBtn2"),
+  logoutBtn3: document.getElementById("logoutBtn3"),
 
   detectLocation: document.getElementById("detectLocation"),
   triggerSOSBig: document.getElementById("triggerSOSBig"),
@@ -65,16 +71,17 @@ function getPath() {
 
 function renderRoute() {
   const path = getPath();
-  [el.routeLogin, el.routeSignup, el.routeApp, el.routeHistory].forEach((p) => p.classList.remove("active"));
+  [el.routeLogin, el.routeSignup, el.routeApp, el.routeHistory, el.routeDevices].forEach((p) => p.classList.remove("active"));
   if (path === "/signup") el.routeSignup.classList.add("active");
   else if (path === "/app") el.routeApp.classList.add("active");
   else if (path === "/history") el.routeHistory.classList.add("active");
+  else if (path === "/devices") el.routeDevices.classList.add("active");
   else el.routeLogin.classList.add("active");
 }
 
 function guardRoute() {
   const path = getPath();
-  if (!state.token && (path === "/app" || path === "/history")) {
+  if (!state.token && (path === "/app" || path === "/history" || path === "/devices")) {
     setHash("/login");
     return;
   }
@@ -306,8 +313,13 @@ function logout() {
 
 el.logoutBtn.addEventListener("click", logout);
 el.logoutBtn2.addEventListener("click", logout);
+el.logoutBtn3.addEventListener("click", logout);
 el.goHistory.addEventListener("click", () => setHash("/history"));
+el.goDevices.addEventListener("click", () => setHash("/devices"));
+el.goDevicesFromHistory.addEventListener("click", () => setHash("/devices"));
 el.goApp.addEventListener("click", () => setHash("/app"));
+el.goAppFromDevices.addEventListener("click", () => setHash("/app"));
+el.goHistoryFromDevices.addEventListener("click", () => setHash("/history"));
 el.refreshHistory.addEventListener("click", loadHistory);
 el.detectLocation.addEventListener("click", async () => {
   try {
