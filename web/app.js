@@ -14,6 +14,12 @@ let warningQueue = [];
 let warningOpen = false;
 let alarmAudioCtx = null;
 let alarmInterval = null;
+let geoWatchId = null;
+let autoSyncLastSentAt = 0;
+let autoSyncLastLat = null;
+let autoSyncLastLon = null;
+const AUTO_SYNC_MIN_INTERVAL_MS = 12000;
+const AUTO_SYNC_MIN_DISTANCE_M = 15;
 
 const el = {
   routeLogin: document.getElementById("routeLogin"),
@@ -365,6 +371,7 @@ function guardRoute() {
     return;
   }
   renderRoute();
+  syncAutoDeviceTracking();
   if (path === "/history") loadHistory();
 }
 
@@ -396,6 +403,84 @@ function setLocationUI() {
     return;
   }
   el.locationState.textContent = `Location: ${state.location.latitude.toFixed(5)}, ${state.location.longitude.toFixed(5)}`;
+}
+
+function getLinkedDeviceUid() {
+  if (el.sendCommandBtn && el.sendCommandBtn.dataset.deviceUid) return el.sendCommandBtn.dataset.deviceUid;
+  if (el.disconnectDeviceBtn && el.disconnectDeviceBtn.dataset.deviceUid) return el.disconnectDeviceBtn.dataset.deviceUid;
+  return "";
+}
+
+function distanceMeters(lat1, lon1, lat2, lon2) {
+  const toRad = (v) => (v * Math.PI) / 180;
+  const R = 6371000;
+  const dLat = toRad(lat2 - lat1);
+  const dLon = toRad(lon2 - lon1);
+  const a =
+    Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+    Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLon / 2) * Math.sin(dLon / 2);
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+  return R * c;
+}
+
+async function queueCoordinatesToDevice(deviceUid, latitude, longitude, silent = true) {
+  await request("/devices/send-coordinates", {
+    method: "POST",
+    body: JSON.stringify({ device_uid: deviceUid, latitude, longitude }),
+  });
+  if (!silent) flash(`Coordinates queued for ${deviceUid}.`);
+}
+
+function stopAutoDeviceSync() {
+  if (geoWatchId !== null) {
+    navigator.geolocation.clearWatch(geoWatchId);
+    geoWatchId = null;
+  }
+  autoSyncLastSentAt = 0;
+  autoSyncLastLat = null;
+  autoSyncLastLon = null;
+}
+
+function syncAutoDeviceTracking() {
+  const shouldRun = !!state.token && getPath() === "/app" && !!getLinkedDeviceUid();
+  if (!shouldRun) {
+    stopAutoDeviceSync();
+    return;
+  }
+  if (geoWatchId !== null) return;
+  if (!navigator.geolocation) return;
+
+  geoWatchId = navigator.geolocation.watchPosition(
+    async (pos) => {
+      const lat = pos.coords.latitude;
+      const lon = pos.coords.longitude;
+      state.location = { latitude: lat, longitude: lon };
+      setLocationUI();
+
+      const now = Date.now();
+      if (now - autoSyncLastSentAt < AUTO_SYNC_MIN_INTERVAL_MS) return;
+
+      if (autoSyncLastLat !== null && autoSyncLastLon !== null) {
+        const moved = distanceMeters(autoSyncLastLat, autoSyncLastLon, lat, lon);
+        if (moved < AUTO_SYNC_MIN_DISTANCE_M) return;
+      }
+
+      const deviceUid = getLinkedDeviceUid();
+      if (!deviceUid) return;
+      try {
+        await queueCoordinatesToDevice(deviceUid, lat, lon, true);
+        autoSyncLastSentAt = now;
+        autoSyncLastLat = lat;
+        autoSyncLastLon = lon;
+      } catch (_) {
+        // Silent for background auto-sync.
+      }
+    },
+    () => {
+      // Silent geolocation watcher errors.
+    },
+    { enableHighAccuracy: true, maximumAge: 5000, timeout: 12000 }
+  );
 }
 
 function captureLocation() {
@@ -460,6 +545,9 @@ async function refreshDeviceInfo() {
       if (el.headerDeviceState) el.headerDeviceState.textContent = "Device: not connected";
       if (el.disconnectDeviceBtn) el.disconnectDeviceBtn.disabled = true;
       if (el.sendCommandBtn) el.sendCommandBtn.disabled = true;
+      if (el.sendCommandBtn) el.sendCommandBtn.dataset.deviceUid = "";
+      if (el.disconnectDeviceBtn) el.disconnectDeviceBtn.dataset.deviceUid = "";
+      syncAutoDeviceTracking();
       return;
     }
     const d = devices[0];
@@ -474,11 +562,13 @@ async function refreshDeviceInfo() {
       el.sendCommandBtn.disabled = false;
       el.sendCommandBtn.dataset.deviceUid = d.device_uid;
     }
+    syncAutoDeviceTracking();
   } catch (error) {
     el.deviceTokenInfo.textContent = "Could not load device info.";
     if (el.connectedDeviceBadge) el.connectedDeviceBadge.textContent = "Device: unavailable";
     if (el.headerDeviceState) el.headerDeviceState.textContent = "Device: unavailable";
     if (el.sendCommandBtn) el.sendCommandBtn.disabled = true;
+    syncAutoDeviceTracking();
   }
 }
 
@@ -583,11 +673,7 @@ if (el.deviceCommandForm) {
     }
 
     try {
-      await request("/devices/send-coordinates", {
-        method: "POST",
-        body: JSON.stringify({ device_uid: deviceUid, latitude, longitude }),
-      });
-      flash(`Coordinates queued for ${deviceUid}.`);
+      await queueCoordinatesToDevice(deviceUid, latitude, longitude, false);
     } catch (error) {
       flash(`Send coordinates failed: ${error.message}`, "err");
     }
@@ -620,6 +706,7 @@ function logout() {
   stopNotificationsSocket();
   stopAlertPolling();
   stopAlarmSound();
+  stopAutoDeviceSync();
   warningQueue = [];
   closeWarningModal();
   state.token = "";

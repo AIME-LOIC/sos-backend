@@ -461,6 +461,17 @@ async def send_coordinates_to_device(
     if device.owner_user_id != user.id:
         raise HTTPException(status_code=403, detail="You can only command your own device")
 
+    # Keep queue small: keep only latest pending command per device.
+    (
+        db.query(DeviceCommand)
+        .filter(
+            DeviceCommand.device_uid == device_uid,
+            DeviceCommand.owner_user_id == user.id,
+            DeviceCommand.status == "pending",
+        )
+        .delete(synchronize_session=False)
+    )
+
     cmd = DeviceCommand(
         device_uid=device_uid,
         owner_user_id=user.id,
