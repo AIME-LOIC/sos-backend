@@ -12,6 +12,8 @@ let lastSeenAlertId = null;
 let alertsBaselineReady = false;
 let warningQueue = [];
 let warningOpen = false;
+let alarmAudioCtx = null;
+let alarmInterval = null;
 
 const el = {
   routeLogin: document.getElementById("routeLogin"),
@@ -101,6 +103,46 @@ function pingBeep() {
   }
 }
 
+function initAudioContext() {
+  if (alarmAudioCtx) return alarmAudioCtx;
+  const AudioCtx = window.AudioContext || window.webkitAudioContext;
+  if (!AudioCtx) return null;
+  alarmAudioCtx = new AudioCtx();
+  return alarmAudioCtx;
+}
+
+function alarmToneOnce(freq = 920, ms = 220) {
+  try {
+    const ctx = initAudioContext();
+    if (!ctx) return;
+    if (ctx.state === "suspended") ctx.resume();
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.type = "square";
+    osc.frequency.value = freq;
+    gain.gain.value = 0.001;
+    osc.connect(gain);
+    gain.connect(ctx.destination);
+    osc.start();
+    gain.gain.exponentialRampToValueAtTime(0.23, ctx.currentTime + 0.01);
+    gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + ms / 1000);
+    osc.stop(ctx.currentTime + ms / 1000 + 0.02);
+  } catch (_) {
+    // ignore
+  }
+}
+
+function startAlarmSound() {
+  if (alarmInterval) return;
+  alarmToneOnce(980, 240);
+  alarmInterval = setInterval(() => alarmToneOnce(780, 210), 460);
+}
+
+function stopAlarmSound() {
+  if (alarmInterval) clearInterval(alarmInterval);
+  alarmInterval = null;
+}
+
 function showBrowserNotification(title, body) {
   if (!("Notification" in window)) return;
   if (Notification.permission === "granted") {
@@ -138,7 +180,10 @@ function closeWarningModal() {
   warningOpen = false;
   if (warningQueue.length > 0) {
     renderWarningModal(warningQueue.shift());
+    startAlarmSound();
+    return;
   }
+  stopAlarmSound();
 }
 
 function queueWarningModal(title, message) {
@@ -157,6 +202,7 @@ function handleIncomingAlert(msg) {
   const text = `SOS received from ${src}${from}`;
   flash(text, src === "DEVICE" ? "err" : "ok");
   pingBeep();
+  startAlarmSound();
   queueWarningModal("Emergency Alert", text);
   if (document.hidden) showBrowserNotification("SOS Alert", text);
   if (getPath() === "/history") loadHistory();
@@ -534,6 +580,7 @@ if (el.disconnectDeviceBtn) {
 function logout() {
   stopNotificationsSocket();
   stopAlertPolling();
+  stopAlarmSound();
   warningQueue = [];
   closeWarningModal();
   state.token = "";
@@ -571,6 +618,10 @@ el.detectLocation.addEventListener("click", async () => {
 });
 el.triggerSOSBig.addEventListener("click", sendSOS);
 if (el.alertWarningClose) el.alertWarningClose.addEventListener("click", closeWarningModal);
+window.addEventListener("pointerdown", () => {
+  const ctx = initAudioContext();
+  if (ctx && ctx.state === "suspended") ctx.resume();
+}, { once: true });
 
 window.addEventListener("hashchange", guardRoute);
 updateTopRow();
