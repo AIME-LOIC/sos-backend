@@ -15,6 +15,8 @@ const unsigned long wifiRetryMs = 8000;
 const float fallbackLat = -1.9441;
 const float fallbackLon = 30.0619;
 const char* sosEndpoint = "/device/sos";
+const char* commandPullEndpoint = "/device/commands/next";
+const unsigned long commandPollMs = 7000;
 
 // ---------- Config Storage ----------
 const uint32_t CFG_MAGIC = 0x534F5331; // SOS1
@@ -36,6 +38,10 @@ int lastReading = HIGH;
 int stableState = HIGH;
 unsigned long lastEdgeAt = 0;
 unsigned long lastWifiTryAt = 0;
+unsigned long lastCommandPollAt = 0;
+bool hasTargetCoords = false;
+float targetLat = 0.0;
+float targetLon = 0.0;
 
 void setLeds(bool redOn, bool greenOn) {
   digitalWrite(redLedPin, redOn ? HIGH : LOW);
@@ -103,6 +109,31 @@ bool shouldClearTokenOnResponse(int code, const String& body) {
          b.indexOf("not linked") >= 0 ||
          b.indexOf("unknown device") >= 0 ||
          b.indexOf("unlinked") >= 0;
+}
+
+bool bodyHasCommand(const String& body) {
+  return body.indexOf("\"has_command\":true") >= 0;
+}
+
+bool extractJsonFloat(const String& body, const char* key, float& outValue) {
+  String pattern = String("\"") + key + "\":";
+  int start = body.indexOf(pattern);
+  if (start < 0) return false;
+  start += pattern.length();
+  while (start < (int)body.length() && (body[start] == ' ' || body[start] == '\"')) start++;
+
+  int end = start;
+  while (end < (int)body.length()) {
+    char c = body[end];
+    if ((c >= '0' && c <= '9') || c == '-' || c == '+' || c == '.' || c == 'e' || c == 'E') {
+      end++;
+      continue;
+    }
+    break;
+  }
+  if (end <= start) return false;
+  outValue = body.substring(start, end).toFloat();
+  return true;
 }
 
 bool hasRequiredConfig() {
@@ -307,6 +338,75 @@ bool sendSOS(float lat, float lon) {
   return ok;
 }
 
+void pollDeviceCommands() {
+  if (strlen(cfg.deviceToken) == 0) return;
+  if (millis() - lastCommandPollAt < commandPollMs) return;
+  lastCommandPollAt = millis();
+
+  if (WiFi.status() != WL_CONNECTED) return;
+
+  WiFiMode_t prevMode = WiFi.getMode();
+  bool hadAp = (prevMode == WIFI_AP || prevMode == WIFI_AP_STA);
+  String apName = "SOS-SETUP-" + String(ESP.getChipId(), HEX);
+  if (hadAp) {
+    server.stop();
+    WiFi.softAPdisconnect(true);
+    WiFi.mode(WIFI_STA);
+    delay(120);
+  }
+
+  String backend = String(cfg.backendUrl);
+  backend.trim();
+  if (backend.endsWith("/")) backend.remove(backend.length() - 1);
+
+  BearSSL::WiFiClientSecure client;
+  client.setInsecure();
+  client.setBufferSizes(4096, 1024);
+  HTTPClient http;
+  http.setTimeout(10000);
+  String url = backend + String(commandPullEndpoint);
+
+  int code = -1;
+  String body;
+  if (http.begin(client, url)) {
+    http.addHeader("Content-Type", "application/json");
+    String payload = String("{\"device_uid\":\"") + deviceUid() +
+                     "\",\"device_token\":\"" + String(cfg.deviceToken) + "\"}";
+    code = http.POST(payload);
+    body = http.getString();
+    http.end();
+  } else {
+    Serial.println("Command poll HTTP begin failed");
+  }
+
+  if (hadAp) {
+    WiFi.mode(WIFI_AP_STA);
+    WiFi.softAP(apName.c_str(), "12345678");
+    server.begin();
+  }
+
+  if (code <= 0) return;
+  if (shouldClearTokenOnResponse(code, body)) {
+    Serial.println("Command poll: token invalid/unlinked.");
+    clearDeviceTokenAndWait();
+    setLeds(true, false);
+    return;
+  }
+  if (code != 200 || !bodyHasCommand(body)) return;
+
+  float lat = 0.0;
+  float lon = 0.0;
+  if (extractJsonFloat(body, "latitude", lat) && extractJsonFloat(body, "longitude", lon)) {
+    targetLat = lat;
+    targetLon = lon;
+    hasTargetCoords = true;
+    Serial.print("New target coordinates received -> lat=");
+    Serial.print(targetLat, 6);
+    Serial.print(" lon=");
+    Serial.println(targetLon, 6);
+  }
+}
+
 void printNetworkDebug() {
   Serial.print("WiFi.status=");
   Serial.println((int)WiFi.status());
@@ -397,6 +497,7 @@ void loop() {
     lastWifiTryAt = millis();
     connectWifi(8000);
   }
+  pollDeviceCommands();
 
   int reading = digitalRead(buttonPin);
   if (reading != lastReading) {
@@ -422,6 +523,13 @@ void loop() {
     Serial.print("Heartbeat | wifi=");
     Serial.print(WiFi.status() == WL_CONNECTED ? "connected" : "disconnected");
     Serial.print(" | button=");
-    Serial.println(stableState == LOW ? "LOW(pressed)" : "HIGH(released)");
+    Serial.print(stableState == LOW ? "LOW(pressed)" : "HIGH(released)");
+    if (hasTargetCoords) {
+      Serial.print(" | target=");
+      Serial.print(targetLat, 4);
+      Serial.print(",");
+      Serial.print(targetLon, 4);
+    }
+    Serial.println();
   }
 }

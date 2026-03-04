@@ -46,6 +46,10 @@ const el = {
   deviceTokenInfo: document.getElementById("deviceTokenInfo"),
   connectedDeviceBadge: document.getElementById("connectedDeviceBadge"),
   disconnectDeviceBtn: document.getElementById("disconnectDeviceBtn"),
+  deviceCommandForm: document.getElementById("deviceCommandForm"),
+  cmdLat: document.getElementById("cmdLat"),
+  cmdLon: document.getElementById("cmdLon"),
+  sendCommandBtn: document.getElementById("sendCommandBtn"),
 
   refreshHistory: document.getElementById("refreshHistory"),
   historyList: document.getElementById("historyList"),
@@ -455,6 +459,7 @@ async function refreshDeviceInfo() {
       if (el.connectedDeviceBadge) el.connectedDeviceBadge.textContent = "Device: none";
       if (el.headerDeviceState) el.headerDeviceState.textContent = "Device: not connected";
       if (el.disconnectDeviceBtn) el.disconnectDeviceBtn.disabled = true;
+      if (el.sendCommandBtn) el.sendCommandBtn.disabled = true;
       return;
     }
     const d = devices[0];
@@ -465,10 +470,15 @@ async function refreshDeviceInfo() {
       el.disconnectDeviceBtn.disabled = false;
       el.disconnectDeviceBtn.dataset.deviceUid = d.device_uid;
     }
+    if (el.sendCommandBtn) {
+      el.sendCommandBtn.disabled = false;
+      el.sendCommandBtn.dataset.deviceUid = d.device_uid;
+    }
   } catch (error) {
     el.deviceTokenInfo.textContent = "Could not load device info.";
     if (el.connectedDeviceBadge) el.connectedDeviceBadge.textContent = "Device: unavailable";
     if (el.headerDeviceState) el.headerDeviceState.textContent = "Device: unavailable";
+    if (el.sendCommandBtn) el.sendCommandBtn.disabled = true;
   }
 }
 
@@ -548,9 +558,38 @@ if (el.deviceLinkForm) {
       });
       el.deviceTokenInfo.textContent = `Linked: ${data.device_uid} | Token: ${data.device_token}`;
       if (el.headerDeviceState) el.headerDeviceState.textContent = `Device: connected (${data.device_uid})`;
+      refreshDeviceInfo();
       flash("Device connected. Copy token to NodeMCU firmware.");
     } catch (error) {
       flash(`Device link failed: ${error.message}`, "err");
+    }
+  });
+}
+
+if (el.deviceCommandForm) {
+  el.deviceCommandForm.addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const deviceUid = (el.sendCommandBtn && el.sendCommandBtn.dataset.deviceUid) || "";
+    if (!deviceUid) {
+      flash("No connected device.", "err");
+      return;
+    }
+
+    const latitude = Number(el.cmdLat.value);
+    const longitude = Number(el.cmdLon.value);
+    if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) {
+      flash("Enter valid coordinates.", "err");
+      return;
+    }
+
+    try {
+      await request("/devices/send-coordinates", {
+        method: "POST",
+        body: JSON.stringify({ device_uid: deviceUid, latitude, longitude }),
+      });
+      flash(`Coordinates queued for ${deviceUid}.`);
+    } catch (error) {
+      flash(`Send coordinates failed: ${error.message}`, "err");
     }
   });
 }
@@ -593,6 +632,10 @@ function logout() {
   if (el.disconnectDeviceBtn) {
     el.disconnectDeviceBtn.disabled = true;
     el.disconnectDeviceBtn.dataset.deviceUid = "";
+  }
+  if (el.sendCommandBtn) {
+    el.sendCommandBtn.disabled = true;
+    el.sendCommandBtn.dataset.deviceUid = "";
   }
   setHash("/login");
   flash("Logged out.");

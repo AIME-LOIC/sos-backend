@@ -80,6 +80,17 @@ class Device(Base):
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
     last_seen_at = Column(DateTime(timezone=True), nullable=True)
 
+class DeviceCommand(Base):
+    __tablename__ = "device_commands"
+    id = Column(PG_UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    device_uid = Column(String, nullable=False, index=True)
+    owner_user_id = Column(PG_UUID(as_uuid=True), ForeignKey("users.id"), nullable=False)
+    latitude = Column(Float, nullable=False)
+    longitude = Column(Float, nullable=False)
+    status = Column(String, default="pending")  # pending | delivered
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    delivered_at = Column(DateTime(timezone=True), nullable=True)
+
 Base.metadata.create_all(bind=engine)
 
 # Keep production DB compatible without external migration tooling.
@@ -121,6 +132,15 @@ class DeviceSOSCreate(BaseModel):
 class AdminDeviceUnlinkRequest(BaseModel):
     device_uid: str
     rotate_token: bool = True
+
+class DeviceCoordinateCommandCreate(BaseModel):
+    device_uid: str
+    latitude: float
+    longitude: float
+
+class DeviceCommandPullRequest(BaseModel):
+    device_uid: str
+    device_token: str
 
 # ---------------- SECURITY ----------------
 
@@ -425,6 +445,54 @@ def my_devices(user: User = Depends(get_current_user), db: Session = Depends(get
         for d in devices
     ]
 
+@app.post("/devices/send-coordinates")
+async def send_coordinates_to_device(
+    payload: DeviceCoordinateCommandCreate,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    device_uid = payload.device_uid.strip()
+    if not device_uid:
+        raise HTTPException(status_code=400, detail="device_uid is required")
+
+    device = db.query(Device).filter(Device.device_uid == device_uid).first()
+    if not device:
+        raise HTTPException(status_code=404, detail="Device not found")
+    if device.owner_user_id != user.id:
+        raise HTTPException(status_code=403, detail="You can only command your own device")
+
+    cmd = DeviceCommand(
+        device_uid=device_uid,
+        owner_user_id=user.id,
+        latitude=payload.latitude,
+        longitude=payload.longitude,
+        status="pending",
+    )
+    db.add(cmd)
+    db.commit()
+    db.refresh(cmd)
+
+    await hub.notify_user(
+        str(user.id),
+        {
+            "type": "device_command_created",
+            "command_id": str(cmd.id),
+            "device_uid": device_uid,
+            "latitude": cmd.latitude,
+            "longitude": cmd.longitude,
+            "status": cmd.status,
+        },
+    )
+
+    return {
+        "message": "Coordinates queued for device",
+        "command_id": str(cmd.id),
+        "device_uid": device_uid,
+        "latitude": cmd.latitude,
+        "longitude": cmd.longitude,
+        "status": cmd.status,
+    }
+
 @app.post("/devices/unlink")
 def unlink_my_device(data: DeviceUnlinkRequest, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     device_uid = data.device_uid.strip()
@@ -446,6 +514,44 @@ def unlink_my_device(data: DeviceUnlinkRequest, user: User = Depends(get_current
         "message": "Device disconnected",
         "device_uid": device.device_uid,
         "new_device_token": device.device_token,
+    }
+
+@app.post("/device/commands/next")
+def get_next_device_command(
+    payload: DeviceCommandPullRequest,
+    db: Session = Depends(get_db),
+):
+    device_uid = payload.device_uid.strip()
+    device = db.query(Device).filter(Device.device_uid == device_uid).first()
+    if not device:
+        raise HTTPException(status_code=404, detail="Unknown device")
+    if device.device_token != payload.device_token:
+        raise HTTPException(status_code=401, detail="Invalid device token")
+    if not device.owner_user_id:
+        raise HTTPException(status_code=400, detail="Device is not linked to a user")
+
+    cmd = (
+        db.query(DeviceCommand)
+        .filter(DeviceCommand.device_uid == device_uid, DeviceCommand.status == "pending")
+        .order_by(DeviceCommand.created_at.asc())
+        .first()
+    )
+    if not cmd:
+        return {"has_command": False}
+
+    cmd.status = "delivered"
+    cmd.delivered_at = datetime.utcnow()
+    db.commit()
+    db.refresh(cmd)
+
+    return {
+        "has_command": True,
+        "command": {
+            "id": str(cmd.id),
+            "latitude": cmd.latitude,
+            "longitude": cmd.longitude,
+            "created_at": cmd.created_at.isoformat() if cmd.created_at else None,
+        },
     }
 
 @app.post("/device/sos")

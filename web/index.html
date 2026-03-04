@@ -114,6 +114,11 @@
             <h3>Connected Device</h3>
             <p id="connectedDeviceBadge" class="small">Device: none</p>
             <p id="deviceTokenInfo" class="small">No device connected yet.</p>
+            <form id="deviceCommandForm" class="stack">
+              <label>Latitude<input id="cmdLat" name="latitude" type="number" step="any" placeholder="-1.9441" required /></label>
+              <label>Longitude<input id="cmdLon" name="longitude" type="number" step="any" placeholder="30.0619" required /></label>
+              <button id="sendCommandBtn" type="submit">Send Coordinates To Device</button>
+            </form>
             <button id="disconnectDeviceBtn" type="button" class="ghost">Disconnect Device</button>
           </section>
         </div>
