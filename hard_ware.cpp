@@ -11,9 +11,7 @@ const int greenLedPin = 12; // D6 (GPIO12) - change if your wiring is different
 const unsigned long debounceMs = 60;
 const unsigned long wifiRetryMs = 8000;
 
-// Demo coordinates (replace with GPS integration)
-const float fallbackLat = -1.9441;
-const float fallbackLon = 30.0619;
+// Coordinates are received from app/web and stored as targetLat/targetLon.
 const char* sosEndpoint = "/device/sos";
 const char* commandPullEndpoint = "/device/commands/next";
 const unsigned long commandPollMs = 7000;
@@ -508,9 +506,22 @@ void loop() {
   if ((millis() - lastEdgeAt) > debounceMs && stableState != reading) {
     stableState = reading;
     if (stableState == LOW) {
-      Serial.println("BUTTON PRESSED -> sending SOS...");
-      printNetworkDebug();
-      bool ok = sendSOS(fallbackLat, fallbackLon);
+      Serial.println("BUTTON PRESSED");
+
+      // Pull latest command first, then send immediately using received target coords only.
+      pollDeviceCommands();
+      if (!hasTargetCoords) {
+        Serial.println("No target coordinates from app yet. Not sending.");
+        setLeds(true, false);
+        return;
+      }
+
+      Serial.print("Sending SOS with target lat=");
+      Serial.print(targetLat, 6);
+      Serial.print(" lon=");
+      Serial.println(targetLon, 6);
+
+      bool ok = sendSOS(targetLat, targetLon);
       Serial.println(ok ? "SOS sent" : "SOS failed");
     } else {
       Serial.println("BUTTON RELEASED");
