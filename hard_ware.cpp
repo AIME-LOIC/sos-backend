@@ -1,51 +1,176 @@
 #include <ESP8266WiFi.h>
 #include <ESP8266HTTPClient.h>
 #include <WiFiClientSecure.h>
+#include <ESP8266WebServer.h>
+#include <EEPROM.h>
 
-// ---------------- CONFIG ----------------
-const char* ssid = "PUT_WIFI_SSID";
-const char* password = "PUT_WIFI_PASSWORD";
+// ---------- Device Behavior ----------
+const int buttonPin = 4; // D2 (GPIO4), INPUT_PULLUP, pressed = LOW
+const unsigned long debounceMs = 60;
+const unsigned long wifiRetryMs = 8000;
 
-const char* backendBaseUrl = "https://sos-backend-q0h6.onrender.com";
-const char* deviceSosEndpoint = "/device/sos";
-
-// Get this from app after linking device UID.
-String deviceToken = "PUT_DEVICE_TOKEN_HERE";
-
-// Hardware pins
-const int buttonPin = 4; // D2 on NodeMCU
-
-// Demo coordinates (replace with GPS sensor values if available)
+// Demo coordinates (replace with GPS integration)
 const float fallbackLat = -1.9441;
 const float fallbackLon = 30.0619;
+const char* sosEndpoint = "/device/sos";
 
-// ---------------- HELPERS ----------------
+// ---------- Config Storage ----------
+const uint32_t CFG_MAGIC = 0x534F5331; // SOS1
+const int EEPROM_SIZE = 1024;
+
+struct DeviceConfig {
+  uint32_t magic;
+  char wifiSsid[33];
+  char wifiPass[65];
+  char backendUrl[129];
+  char deviceToken[97];
+};
+
+DeviceConfig cfg;
+ESP8266WebServer server(80);
+bool portalMode = false;
+
+int lastReading = HIGH;
+int stableState = HIGH;
+unsigned long lastEdgeAt = 0;
+unsigned long lastWifiTryAt = 0;
+
 String deviceUid() {
   return "NODEMCU_" + String(ESP.getChipId(), HEX);
 }
 
-void ensureWifi() {
-  if (WiFi.status() == WL_CONNECTED) return;
-  WiFi.begin(ssid, password);
+void safeCopy(char* dst, size_t dstSize, const String& src) {
+  if (dstSize == 0) return;
+  size_t n = src.length();
+  if (n >= dstSize) n = dstSize - 1;
+  memcpy(dst, src.c_str(), n);
+  dst[n] = '\0';
+}
+
+void loadConfig() {
+  EEPROM.begin(EEPROM_SIZE);
+  EEPROM.get(0, cfg);
+  if (cfg.magic != CFG_MAGIC) {
+    memset(&cfg, 0, sizeof(cfg));
+    cfg.magic = CFG_MAGIC;
+    safeCopy(cfg.backendUrl, sizeof(cfg.backendUrl), "https://sos-backend-q0h6.onrender.com");
+  }
+}
+
+void saveConfig() {
+  cfg.magic = CFG_MAGIC;
+  EEPROM.put(0, cfg);
+  EEPROM.commit();
+}
+
+bool hasRequiredConfig() {
+  return strlen(cfg.wifiSsid) > 0 && strlen(cfg.backendUrl) > 0 && strlen(cfg.deviceToken) > 0;
+}
+
+bool connectWifi(uint32_t timeoutMs = 20000) {
+  if (WiFi.status() == WL_CONNECTED) return true;
+
+  WiFi.mode(WIFI_STA);
+  WiFi.begin(cfg.wifiSsid, cfg.wifiPass);
   Serial.print("WiFi connecting");
-  while (WiFi.status() != WL_CONNECTED) {
-    delay(500);
+
+  unsigned long start = millis();
+  while (WiFi.status() != WL_CONNECTED && millis() - start < timeoutMs) {
+    delay(400);
     Serial.print(".");
   }
-  Serial.println("\nWiFi connected");
+  Serial.println();
+
+  if (WiFi.status() == WL_CONNECTED) {
+    Serial.println("WiFi connected");
+    Serial.print("IP: ");
+    Serial.println(WiFi.localIP());
+    return true;
+  }
+  Serial.println("WiFi connect failed");
+  return false;
+}
+
+String htmlEscape(const String& s) {
+  String out = s;
+  out.replace("&", "&amp;");
+  out.replace("<", "&lt;");
+  out.replace(">", "&gt;");
+  out.replace("\"", "&quot;");
+  return out;
+}
+
+String buildConfigPage() {
+  String uid = deviceUid();
+  String ssid = htmlEscape(String(cfg.wifiSsid));
+  String pass = htmlEscape(String(cfg.wifiPass));
+  String backend = htmlEscape(String(cfg.backendUrl));
+  String token = htmlEscape(String(cfg.deviceToken));
+
+  String page = "<!doctype html><html><head><meta name='viewport' content='width=device-width,initial-scale=1'>";
+  page += "<title>SOS Device Setup</title><style>body{font-family:Arial;padding:16px;background:#f4f6fa}";
+  page += ".card{max-width:520px;margin:auto;background:#fff;padding:16px;border-radius:12px;border:1px solid #ddd}";
+  page += "input{width:100%;padding:8px;margin:6px 0 12px;border:1px solid #ccc;border-radius:8px}";
+  page += "button{background:#0d4f8a;color:#fff;border:0;padding:10px 14px;border-radius:8px}</style></head><body>";
+  page += "<div class='card'><h2>SOS Device Setup</h2>";
+  page += "<p><b>Device UID:</b> " + uid + "</p>";
+  page += "<form method='POST' action='/save'>";
+  page += "WiFi SSID<input name='wifi_ssid' value='" + ssid + "' required>";
+  page += "WiFi Password<input name='wifi_pass' value='" + pass + "'>";
+  page += "Backend URL<input name='backend_url' value='" + backend + "' required>";
+  page += "Device Token<input name='device_token' value='" + token + "' required>";
+  page += "<button type='submit'>Save & Reboot</button></form>";
+  page += "<p>After saving, reopen app and test SOS button.</p></div></body></html>";
+  return page;
+}
+
+void startConfigPortal() {
+  portalMode = true;
+  WiFi.mode(WIFI_AP);
+  String apName = "SOS-SETUP-" + String(ESP.getChipId(), HEX);
+  WiFi.softAP(apName.c_str(), "12345678");
+
+  Serial.println("SETUP MODE ENABLED");
+  Serial.print("AP SSID: ");
+  Serial.println(apName);
+  Serial.println("Open: http://192.168.4.1");
+
+  server.on("/", HTTP_GET, []() {
+    server.send(200, "text/html", buildConfigPage());
+  });
+
+  server.on("/save", HTTP_POST, []() {
+    safeCopy(cfg.wifiSsid, sizeof(cfg.wifiSsid), server.arg("wifi_ssid"));
+    safeCopy(cfg.wifiPass, sizeof(cfg.wifiPass), server.arg("wifi_pass"));
+    safeCopy(cfg.backendUrl, sizeof(cfg.backendUrl), server.arg("backend_url"));
+    safeCopy(cfg.deviceToken, sizeof(cfg.deviceToken), server.arg("device_token"));
+    saveConfig();
+    server.send(200, "text/html", "<h3>Saved. Rebooting...</h3>");
+    delay(800);
+    ESP.restart();
+  });
+
+  server.onNotFound([]() {
+    server.sendHeader("Location", "/", true);
+    server.send(302, "text/plain", "");
+  });
+  server.begin();
 }
 
 bool sendSOS(float lat, float lon) {
-  if (deviceToken.length() == 0 || deviceToken == "PUT_DEVICE_TOKEN_HERE") {
-    Serial.println("Missing device token. Link device in app first.");
+  if (strlen(cfg.deviceToken) == 0) {
+    Serial.println("Missing device token. Open setup portal.");
     return false;
   }
+
+  String backend = String(cfg.backendUrl);
+  if (backend.endsWith("/")) backend.remove(backend.length() - 1);
 
   WiFiClientSecure client;
   client.setInsecure();
   HTTPClient http;
-  String url = String(backendBaseUrl) + String(deviceSosEndpoint);
 
+  String url = backend + String(sosEndpoint);
   if (!http.begin(client, url)) {
     Serial.println("HTTP begin failed");
     return false;
@@ -53,7 +178,7 @@ bool sendSOS(float lat, float lon) {
 
   http.addHeader("Content-Type", "application/json");
   String payload = String("{\"device_uid\":\"") + deviceUid() +
-                   "\",\"device_token\":\"" + deviceToken +
+                   "\",\"device_token\":\"" + String(cfg.deviceToken) +
                    "\",\"latitude\":" + String(lat, 6) +
                    ",\"longitude\":" + String(lon, 6) + "}";
 
@@ -67,32 +192,77 @@ bool sendSOS(float lat, float lon) {
   return code >= 200 && code < 300;
 }
 
-// ---------------- ARDUINO ----------------
 void setup() {
-  Serial.begin(9600); // Easier serial monitor compatibility
+  Serial.begin(9600);
   delay(200);
   Serial.println("\nBOOT OK");
-
-  pinMode(buttonPin, INPUT_PULLUP);
-  ensureWifi();
-
+  Serial.print("Reset reason: ");
+  Serial.println(ESP.getResetReason());
+  Serial.print("Chip ID: ");
+  Serial.println(String(ESP.getChipId(), HEX));
   Serial.print("Device UID: ");
   Serial.println(deviceUid());
-  Serial.println("Link this UID in app, then set deviceToken and re-upload.");
+
+  pinMode(buttonPin, INPUT_PULLUP);
+  loadConfig();
+
+  // Hold button during boot to force setup portal.
+  if (digitalRead(buttonPin) == LOW) {
+    Serial.println("Boot button held: forcing setup portal.");
+    startConfigPortal();
+    return;
+  }
+
+  if (!hasRequiredConfig()) {
+    Serial.println("Missing config. Starting setup portal.");
+    startConfigPortal();
+    return;
+  }
+
+  if (!connectWifi()) {
+    Serial.println("WiFi failed. Starting setup portal.");
+    startConfigPortal();
+    return;
+  }
+
+  Serial.println("Device ready.");
 }
 
 void loop() {
-  ensureWifi();
-
-  if (digitalRead(buttonPin) == LOW) {
-    Serial.println("Button pressed -> sending SOS...");
-    bool ok = sendSOS(fallbackLat, fallbackLon);
-    if (ok) Serial.println("SOS sent");
-    else Serial.println("SOS failed");
-
-    // Cooldown/debounce
-    delay(10000);
+  if (portalMode) {
+    server.handleClient();
+    delay(5);
+    return;
   }
 
-  delay(60);
+  if (WiFi.status() != WL_CONNECTED && millis() - lastWifiTryAt > wifiRetryMs) {
+    lastWifiTryAt = millis();
+    connectWifi(8000);
+  }
+
+  int reading = digitalRead(buttonPin);
+  if (reading != lastReading) {
+    lastEdgeAt = millis();
+    lastReading = reading;
+  }
+
+  if ((millis() - lastEdgeAt) > debounceMs && stableState != reading) {
+    stableState = reading;
+    if (stableState == LOW) {
+      Serial.println("BUTTON PRESSED -> sending SOS...");
+      bool ok = sendSOS(fallbackLat, fallbackLon);
+      Serial.println(ok ? "SOS sent" : "SOS failed");
+    } else {
+      Serial.println("BUTTON RELEASED");
+    }
+  }
+
+  static unsigned long lastBeat = 0;
+  if (millis() - lastBeat > 3000) {
+    lastBeat = millis();
+    Serial.print("Heartbeat | wifi=");
+    Serial.print(WiFi.status() == WL_CONNECTED ? "connected" : "disconnected");
+    Serial.print(" | button=");
+    Serial.println(stableState == LOW ? "LOW(pressed)" : "HIGH(released)");
+  }
 }

@@ -8,7 +8,7 @@ from datetime import datetime, timedelta
 from pathlib import Path
 from typing import List
 
-from fastapi import FastAPI, Depends, HTTPException, status, Body
+from fastapi import FastAPI, Depends, HTTPException, status, Body, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
@@ -65,6 +65,8 @@ class SOSAlert(Base):
     latitude = Column(Float, nullable=False)
     longitude = Column(Float, nullable=False)
     status = Column(String, default="active")
+    source_type = Column(String, default="app")  # web | phone | device | app
+    source_device_uid = Column(String, nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
 class Device(Base):
@@ -79,6 +81,11 @@ class Device(Base):
     last_seen_at = Column(DateTime(timezone=True), nullable=True)
 
 Base.metadata.create_all(bind=engine)
+
+# Keep production DB compatible without external migration tooling.
+with engine.begin() as conn:
+    conn.exec_driver_sql("ALTER TABLE sos_alerts ADD COLUMN IF NOT EXISTS source_type VARCHAR")
+    conn.exec_driver_sql("ALTER TABLE sos_alerts ADD COLUMN IF NOT EXISTS source_device_uid VARCHAR")
 
 # ---------------- SCHEMAS ----------------
 
@@ -107,6 +114,10 @@ class DeviceSOSCreate(BaseModel):
     latitude: float
     longitude: float
     battery: str | None = None
+
+class AdminDeviceUnlinkRequest(BaseModel):
+    device_uid: str
+    rotate_token: bool = True
 
 # ---------------- SECURITY ----------------
 
@@ -137,6 +148,14 @@ def hash_password(password: str):
 
 def generate_device_token() -> str:
     return secrets.token_urlsafe(24)
+
+def infer_source_type(user_agent: str | None) -> str:
+    ua = (user_agent or "").lower()
+    if "mozilla" in ua:
+        return "web"
+    if "dart" in ua or "okhttp" in ua or "android" in ua or "iphone" in ua or "ios" in ua:
+        return "phone"
+    return "app"
 
 def verify_password(password, hashed):
     if isinstance(hashed, str) and hashed.startswith(f"{PBKDF2_PREFIX}$"):
@@ -187,6 +206,10 @@ def get_current_user(token: str = Depends(oauth2_scheme), db: Session = Depends(
         raise credentials_exception
     return user
 
+def require_admin(user: User):
+    if user.role != "admin":
+        raise HTTPException(status_code=403, detail="Admin access required")
+
 # ---------------- APP ----------------
 
 app = FastAPI(title="SOS Backend")
@@ -234,11 +257,19 @@ def login(form_data: OAuth2PasswordRequestForm = Depends(), db: Session = Depend
     return {"access_token": token, "token_type": "bearer"}
 
 @app.post("/sos/create")
-def create_sos(sos: SOSCreate, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+def create_sos(
+    sos: SOSCreate,
+    request: Request,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    source_type = infer_source_type(request.headers.get("user-agent"))
     alert = SOSAlert(
         user_id=user.id,
         latitude=sos.latitude,
-        longitude=sos.longitude
+        longitude=sos.longitude,
+        source_type=source_type,
+        source_device_uid=None,
     )
     db.add(alert)
     db.commit()
@@ -312,6 +343,8 @@ def create_sos_from_device(payload: DeviceSOSCreate, db: Session = Depends(get_d
         user_id=device.owner_user_id,
         latitude=payload.latitude,
         longitude=payload.longitude,
+        source_type="device",
+        source_device_uid=device.device_uid,
     )
     db.add(alert)
     device.last_seen_at = datetime.utcnow()
@@ -323,6 +356,7 @@ def create_sos_from_device(payload: DeviceSOSCreate, db: Session = Depends(get_d
         "sos_id": alert.id,
         "user_id": device.owner_user_id,
         "device_uid": device.device_uid,
+        "source_type": "device",
     }
 
 # ---------------- ADMIN ROUTES ----------------
@@ -351,11 +385,44 @@ def get_all_alerts(db: Session = Depends(get_db)):
             },
             "latitude": alert.latitude,
             "longitude": alert.longitude,
+            "source_type": alert.source_type or "app",
+            "source_device_uid": alert.source_device_uid,
             "status": alert.status,
             "created_at": alert.created_at,
         }
         for alert, user in rows
     ]
+
+@app.post("/admin/devices/unlink")
+def admin_unlink_device(
+    data: AdminDeviceUnlinkRequest,
+    admin_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    require_admin(admin_user)
+
+    device_uid = data.device_uid.strip()
+    if not device_uid:
+        raise HTTPException(status_code=400, detail="device_uid is required")
+
+    device = db.query(Device).filter(Device.device_uid == device_uid).first()
+    if not device:
+        raise HTTPException(status_code=404, detail="Device not found")
+
+    previous_owner = str(device.owner_user_id) if device.owner_user_id else None
+    device.owner_user_id = None
+    if data.rotate_token:
+        device.device_token = generate_device_token()
+    db.commit()
+    db.refresh(device)
+
+    return {
+        "message": "Device unlinked",
+        "device_uid": device.device_uid,
+        "previous_owner_user_id": previous_owner,
+        "rotate_token": data.rotate_token,
+        "device_token": device.device_token,
+    }
 
 @app.get("/admin/user/{user_id}")
 def get_user_for_admin(user_id: str, db: Session = Depends(get_db)):

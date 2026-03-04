@@ -24,4 +24,18 @@ class SOSAlert(Base):
     latitude = Column(Float, nullable=False)
     longitude = Column(Float, nullable=False)
     status = Column(String, default="active")
+    source_type = Column(String, default="app")
+    source_device_uid = Column(String, nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+class Device(Base):
+    __tablename__ = "devices"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    device_uid = Column(String, unique=True, nullable=False)
+    device_name = Column(String, nullable=True)
+    device_token = Column(String, nullable=False)
+    owner_user_id = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+    last_seen_at = Column(DateTime(timezone=True), nullable=True)
