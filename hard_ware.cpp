@@ -28,7 +28,7 @@ struct DeviceConfig {
 
 DeviceConfig cfg;
 ESP8266WebServer server(80);
-bool portalMode = false;
+bool portalStarted = false;
 
 int lastReading = HIGH;
 int stableState = HIGH;
@@ -70,7 +70,7 @@ bool hasRequiredConfig() {
 bool connectWifi(uint32_t timeoutMs = 20000) {
   if (WiFi.status() == WL_CONNECTED) return true;
 
-  WiFi.mode(WIFI_STA);
+  WiFi.mode(WIFI_AP_STA);
   WiFi.begin(cfg.wifiSsid, cfg.wifiPass);
   Serial.print("WiFi connecting");
 
@@ -125,8 +125,10 @@ String buildConfigPage() {
 }
 
 void startConfigPortal() {
-  portalMode = true;
-  WiFi.mode(WIFI_AP);
+  if (portalStarted) return;
+  portalStarted = true;
+
+  WiFi.mode(WIFI_AP_STA);
   String apName = "SOS-SETUP-" + String(ESP.getChipId(), HEX);
   WiFi.softAP(apName.c_str(), "12345678");
 
@@ -155,6 +157,7 @@ void startConfigPortal() {
     server.send(302, "text/plain", "");
   });
   server.begin();
+  Serial.println("Setup web server started.");
 }
 
 bool sendSOS(float lat, float lon) {
@@ -206,22 +209,21 @@ void setup() {
   pinMode(buttonPin, INPUT_PULLUP);
   loadConfig();
 
-  // Hold button during boot to force setup portal.
+  // Always keep setup AP+portal available.
+  startConfigPortal();
+
+  // Hold button during boot only to indicate setup mode preference in logs.
   if (digitalRead(buttonPin) == LOW) {
-    Serial.println("Boot button held: forcing setup portal.");
-    startConfigPortal();
-    return;
+    Serial.println("Boot button held: setup portal already active (AP+STA).");
   }
 
   if (!hasRequiredConfig()) {
-    Serial.println("Missing config. Starting setup portal.");
-    startConfigPortal();
+    Serial.println("Missing config. Use setup portal at http://192.168.4.1");
     return;
   }
 
   if (!connectWifi()) {
-    Serial.println("WiFi failed. Starting setup portal.");
-    startConfigPortal();
+    Serial.println("WiFi failed. Setup portal still available at http://192.168.4.1");
     return;
   }
 
@@ -229,11 +231,8 @@ void setup() {
 }
 
 void loop() {
-  if (portalMode) {
-    server.handleClient();
-    delay(5);
-    return;
-  }
+  // Always serve setup page in AP mode while device runs normally.
+  server.handleClient();
 
   if (WiFi.status() != WL_CONNECTED && millis() - lastWifiTryAt > wifiRetryMs) {
     lastWifiTryAt = millis();
