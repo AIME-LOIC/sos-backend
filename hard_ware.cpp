@@ -75,6 +75,22 @@ void saveConfig() {
   EEPROM.commit();
 }
 
+void clearDeviceTokenAndWait() {
+  safeCopy(cfg.deviceToken, sizeof(cfg.deviceToken), "");
+  saveConfig();
+  Serial.println("Local token cleared. Device is now waiting to be connected.");
+}
+
+bool shouldClearTokenOnResponse(int code, const String& body) {
+  if (code == 400 || code == 401 || code == 403) return true;
+  String b = body;
+  b.toLowerCase();
+  return b.indexOf("invalid device token") >= 0 ||
+         b.indexOf("not linked") >= 0 ||
+         b.indexOf("unknown device") >= 0 ||
+         b.indexOf("unlinked") >= 0;
+}
+
 bool hasRequiredConfig() {
   return strlen(cfg.wifiSsid) > 0 && strlen(cfg.backendUrl) > 0 && strlen(cfg.deviceToken) > 0;
 }
@@ -246,6 +262,13 @@ bool sendSOS(float lat, float lon) {
   Serial.print("POST /device/sos => ");
   Serial.println(code);
   Serial.println(body);
+
+  // If backend says token/link invalid, clear token locally and wait for re-link.
+  if (shouldClearTokenOnResponse(code, body)) {
+    Serial.println("Device token is invalid or device is unlinked.");
+    clearDeviceTokenAndWait();
+  }
+
   return code >= 200 && code < 300;
 }
 
