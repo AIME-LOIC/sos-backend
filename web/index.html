@@ -8,7 +8,423 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;700&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="./styles.css" />
+  <style>
+:root {
+  --bg: #eef2f8;
+  --ink: #101826;
+  --line: #d8deea;
+  --panel: #ffffff;
+  --primary: #154b80;
+  --primary-soft: #ecf4ff;
+  --danger: #cf1e24;
+  --danger-dark: #9f1318;
+  --muted: #566984;
+}
+
+* { box-sizing: border-box; }
+body { margin: 0; font-family: "Space Grotesk", sans-serif; background: radial-gradient(circle at 10% -5%, #dbe7ff 0%, transparent 32%), var(--bg); color: var(--ink); }
+main { min-height: 100vh; }
+.shell { width: min(1100px, 100%); margin: 0 auto; }
+
+.page { display: none; min-height: 100vh; }
+.page.active { display: grid; }
+
+.auth-page {
+  place-items: center;
+  padding: 1rem;
+}
+
+.app-page {
+  align-content: start;
+  gap: 1rem;
+  padding: 1rem;
+}
+
+.app-top {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  padding: 0.9rem 1rem;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 0.6rem;
+  flex-wrap: wrap;
+  box-shadow: 0 8px 24px rgba(9, 22, 45, 0.05);
+}
+
+.app-top h2 { margin: 0; letter-spacing: 0.04em; }
+
+.card {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  padding: 1rem;
+  box-shadow: 0 8px 24px rgba(9, 22, 45, 0.05);
+}
+.card h3 { margin: 0 0 0.55rem; }
+
+.auth-card { width: 100%; max-width: 430px; }
+.auth-card h1 { margin: 0 0 0.75rem; }
+
+.stack { display: grid; gap: 0.55rem; }
+label { display: grid; gap: 0.28rem; font-size: 0.9rem; color: #4a5d75; }
+
+input, button { font: inherit; }
+input {
+  border: 1px solid #c8d1df;
+  border-radius: 10px;
+  padding: 0.62rem 0.7rem;
+  background: #fff;
+}
+
+button {
+  border: 0;
+  border-radius: 10px;
+  padding: 0.62rem 0.85rem;
+  background: var(--primary);
+  color: #fff;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+button:hover { filter: brightness(1.05); }
+button.ghost { background: var(--primary-soft); color: #1d3249; }
+
+.linkline { margin: 0.75rem 0 0; color: #566a84; }
+
+.small { margin: 0; color: var(--muted); font-size: 0.9rem; }
+.row { display: flex; align-items: center; gap: 0.6rem; flex-wrap: wrap; }
+.row.between { justify-content: space-between; }
+.center-row { justify-content: center; }
+
+.status-card { padding: 0.8rem 1rem; }
+.status-grid {
+  display: grid;
+  gap: 0.4rem;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.status-grid p {
+  margin: 0;
+  background: #f6f9ff;
+  border: 1px solid #dce5f3;
+  border-radius: 10px;
+  padding: 0.5rem 0.6rem;
+}
+
+.app-card { text-align: center; padding: 1.2rem; }
+.device-card { text-align: left; }
+
+.sos-button {
+  position: relative;
+  --hold-progress: 0%;
+  width: min(88vw, 420px);
+  aspect-ratio: 1 / 1;
+  border-radius: 999px;
+  margin: 1rem auto 0.9rem;
+  font-size: clamp(1.2rem, 4vw, 2rem);
+  letter-spacing: 0.05em;
+  background: radial-gradient(circle at 35% 25%, #ff656b 0%, var(--danger) 60%, var(--danger-dark) 100%);
+  box-shadow: 0 24px 45px rgba(216, 31, 38, 0.35), inset 0 -10px 22px rgba(0, 0, 0, 0.18);
+  user-select: none;
+  touch-action: none;
+}
+
+.sos-button::before {
+  content: "";
+  position: absolute;
+  inset: -12px;
+  border-radius: 999px;
+  background: conic-gradient(#ffd2d4 var(--hold-progress), rgba(255, 255, 255, 0.22) 0);
+  -webkit-mask: radial-gradient(farthest-side, transparent calc(100% - 10px), #000 calc(100% - 9px));
+  mask: radial-gradient(farthest-side, transparent calc(100% - 10px), #000 calc(100% - 9px));
+  opacity: 0;
+  transition: opacity 0.12s ease;
+  pointer-events: none;
+}
+
+.sos-button.holding::before {
+  opacity: 1;
+}
+
+.hold-hint {
+  text-align: center;
+  margin-top: -0.1rem;
+}
+
+.history-list {
+  list-style: none;
+  margin: 0.6rem 0 0;
+  padding: 0;
+  display: grid;
+  gap: 0.5rem;
+}
+
+.history-list li {
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: #f8fbff;
+  padding: 0.7rem;
+}
+
+.top-actions { display: flex; gap: 0.5rem; }
+.status-inline { display: flex; flex-wrap: wrap; gap: 0.45rem; margin-top: 0.45rem; }
+.pill {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.2rem 0.55rem;
+  border-radius: 999px;
+  border: 1px solid #d0d9e8;
+  background: #f8fbff;
+  color: #40526b;
+  font-size: 0.78rem;
+  font-weight: 600;
+}
+.pill.ok { background: #e7f7eb; border-color: #b4e2bf; color: #1f7a3b; }
+.pill.warn { background: #fff4e7; border-color: #f4d4ac; color: #9e5f12; }
+.pill.err { background: #fdebec; border-color: #f0bfc3; color: #a21f27; }
+
+.device-grid {
+  display: grid;
+  grid-template-columns: 1.4fr 1fr;
+  gap: 0.9rem;
+}
+
+.device-col {
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 0.8rem;
+  background: #fcfdff;
+}
+
+.device-summary {
+  display: grid;
+  gap: 0.55rem;
+  align-content: start;
+}
+
+.flash {
+  position: fixed;
+  left: 16px;
+  bottom: 14px;
+  transform: translateY(14px);
+  margin: 0;
+  background: #102234;
+  color: #fff;
+  border-radius: 10px;
+  padding: 0.5rem 0.75rem;
+  font-size: 0.86rem;
+  min-width: 220px;
+  text-align: left;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.2s ease, transform 0.2s ease;
+}
+
+.flash.err { background: #8f1f27; }
+.flash.show { opacity: 1; transform: translateY(0); }
+
+.modal {
+  position: fixed;
+  inset: 0;
+  background: rgba(11, 19, 33, 0.48);
+  display: none;
+  place-items: center;
+  padding: 1rem;
+  z-index: 50;
+}
+
+.modal.show { display: grid; }
+
+.modal-card {
+  width: min(440px, 95vw);
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  padding: 1rem;
+}
+
+.modal-card h3 { margin: 0 0 0.5rem; }
+
+.warning-card {
+  border: 1px solid #f1b6b8;
+  box-shadow: 0 18px 48px rgba(140, 18, 23, 0.35);
+  width: min(700px, 95vw);
+  min-height: 320px;
+  padding: 1.25rem;
+  display: grid;
+  gap: 0.8rem;
+  align-content: center;
+}
+
+.warning-card h3 {
+  color: #8e161b;
+  font-size: clamp(1.5rem, 3vw, 2rem);
+  margin: 0;
+}
+
+.warning-card .small {
+  font-size: clamp(1rem, 2.2vw, 1.2rem);
+  color: #3c4a60;
+}
+
+.warning-icon-wrap {
+  display: grid;
+  place-items: center;
+}
+
+.warning-icon {
+  width: 88px;
+  height: 88px;
+  border-radius: 999px;
+  display: grid;
+  place-items: center;
+  font-size: 3rem;
+  font-weight: 700;
+  color: #fff;
+  background: radial-gradient(circle at 35% 25%, #ff5f66 0%, #c5151c 75%);
+  box-shadow: 0 10px 28px rgba(197, 21, 28, 0.5);
+  animation: warningPulse 1s ease-in-out infinite;
+}
+
+@keyframes warningPulse {
+  0% { transform: scale(1); }
+  50% { transform: scale(1.18); }
+  100% { transform: scale(1); }
+}
+
+@media (max-width: 640px) {
+  .app-top { flex-direction: column; align-items: flex-start; gap: 0.55rem; }
+  .status-grid { grid-template-columns: 1fr; }
+  .device-grid { grid-template-columns: 1fr; }
+}
+
+/* Guardian-style visual overrides */
+body {
+  background: #e8eaee;
+}
+
+.shell {
+  width: min(1200px, 100%);
+}
+
+.app-page {
+  gap: 0.75rem;
+}
+
+.app-top {
+  border-radius: 12px 12px 0 0;
+  border-bottom: 0;
+  background: #ffffff;
+  padding: 0.95rem 1.2rem;
+}
+
+.brand-area h2 {
+  color: #2563eb;
+  font-size: 1.85rem;
+  letter-spacing: 0.01em;
+}
+
+.status-inline {
+  margin-top: 0.35rem;
+}
+
+.pill {
+  font-size: 0.72rem;
+  padding: 0.16rem 0.48rem;
+}
+
+.top-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.9rem;
+}
+
+.top-actions button {
+  background: transparent;
+  color: #5a6b84;
+  border-radius: 0;
+  padding: 0;
+  font-weight: 700;
+  min-height: auto;
+}
+
+.top-actions button:hover {
+  filter: none;
+  color: #1d273a;
+}
+
+.top-actions .ghost {
+  color: #8796ab;
+}
+
+.nav-home {
+  color: #1f2937;
+  font-weight: 800;
+}
+
+.system-state {
+  color: #0f9f58;
+  font-size: 0.84rem;
+  font-weight: 800;
+}
+
+.status-card {
+  border-radius: 0;
+  box-shadow: none;
+  border-top: 0;
+  border-bottom: 0;
+}
+
+.app-card {
+  min-height: 58vh;
+  background: #eef0f2;
+  border-radius: 0 0 12px 12px;
+  border-top: 0;
+  display: grid;
+  align-content: center;
+  justify-items: center;
+  gap: 0.7rem;
+  box-shadow: 0 6px 26px rgba(22, 29, 45, 0.08);
+}
+
+.sos-button {
+  width: min(78vw, 280px);
+  margin: 0.5rem auto 0.4rem;
+  box-shadow: 0 12px 30px rgba(216, 31, 38, 0.32), inset 0 -10px 18px rgba(0, 0, 0, 0.15);
+}
+
+.focus-title {
+  margin: 0;
+  font-size: 2rem;
+  font-weight: 800;
+  color: #1d273a;
+}
+
+.history-card {
+  border-radius: 0 0 12px 12px;
+  border-top: 0;
+}
+
+.history-list {
+  margin-top: 1rem;
+}
+
+.history-list li {
+  border: 0;
+  border-left: 4px solid #f14646;
+  border-radius: 8px;
+  background: #f3ecee;
+  padding: 0.82rem 0.95rem;
+}
+
+.history-list li:nth-child(even) {
+  border-left-color: #3a73e9;
+  background: #e9edf3;
+}
+
+</style>
 </head>
 <body>
   <main class="shell">
@@ -43,19 +459,20 @@
 
     <section id="routeApp" class="page app-page">
       <header class="app-top">
-        <div>
-          <h2>SOS SYSTEM</h2>
-          <p class="small">Emergency response center</p>
+        <div class="brand-area">
+          <h2>🛡 Guardian</h2>
           <div class="status-inline">
             <span id="wsStatus" class="pill">Realtime: connecting</span>
             <span id="autoSyncStatus" class="pill">Auto Sync: off</span>
           </div>
         </div>
         <nav class="top-actions">
-          <button id="goDevices" type="button">Devices</button>
+          <span class="nav-home">Home</span>
           <button id="goHistory" type="button">History</button>
+          <button id="goDevices" type="button">Contacts</button>
           <button id="logoutBtn" type="button" class="ghost">Logout</button>
         </nav>
+        <div class="system-state">SYSTEM READY</div>
       </header>
 
       <article class="card status-card">
@@ -69,6 +486,7 @@
       <article class="card app-card">
         <button id="triggerSOSBig" type="button" class="sos-button">SEND SOS</button>
         <p class="small hold-hint">Hold button until ring completes to send SOS.</p>
+        <p class="focus-title">Location Secured</p>
         <div class="row center-row">
           <button id="detectLocation" type="button">Update Location</button>
         </div>
@@ -157,6 +575,860 @@
     <p id="flash" class="flash" aria-live="polite"></p>
   </main>
 
-  <script src="./app.js"></script>
+  <script>
+const state = {
+  baseUrl: localStorage.getItem("sos_base_url") || window.location.origin,
+  token: localStorage.getItem("sos_token") || "",
+  location: null,
+};
+let toastTimer = null;
+let notifyWs = null;
+let notifyPingTimer = null;
+let notifyReconnectTimer = null;
+let alertPollTimer = null;
+let lastSeenAlertId = null;
+let alertsBaselineReady = false;
+let warningQueue = [];
+let warningOpen = false;
+let alarmAudioCtx = null;
+let alarmInterval = null;
+let geoWatchId = null;
+let autoSyncLastSentAt = 0;
+let autoSyncLastLat = null;
+let autoSyncLastLon = null;
+const AUTO_SYNC_MIN_INTERVAL_MS = 12000;
+const AUTO_SYNC_MIN_DISTANCE_M = 15;
+const SOS_HOLD_MS = 1800;
+let sosHoldActive = false;
+let sosHoldStartedAt = 0;
+let sosHoldRaf = null;
+let sosHoldSent = false;
+let sendingSOS = false;
+
+const el = {
+  routeLogin: document.getElementById("routeLogin"),
+  routeSignup: document.getElementById("routeSignup"),
+  routeApp: document.getElementById("routeApp"),
+  routeHistory: document.getElementById("routeHistory"),
+  routeDevices: document.getElementById("routeDevices"),
+
+  loginForm: document.getElementById("loginForm"),
+  registerForm: document.getElementById("registerForm"),
+
+  goHistory: document.getElementById("goHistory"),
+  goDevices: document.getElementById("goDevices"),
+  goDevicesFromHistory: document.getElementById("goDevicesFromHistory"),
+  goApp: document.getElementById("goApp"),
+  goAppFromDevices: document.getElementById("goAppFromDevices"),
+  goHistoryFromDevices: document.getElementById("goHistoryFromDevices"),
+  logoutBtn: document.getElementById("logoutBtn"),
+  logoutBtn2: document.getElementById("logoutBtn2"),
+  logoutBtn3: document.getElementById("logoutBtn3"),
+
+  detectLocation: document.getElementById("detectLocation"),
+  triggerSOSBig: document.getElementById("triggerSOSBig"),
+  locationState: document.getElementById("locationState"),
+  headerDeviceState: document.getElementById("headerDeviceState"),
+  wsStatus: document.getElementById("wsStatus"),
+  autoSyncStatus: document.getElementById("autoSyncStatus"),
+  lastSend: document.getElementById("lastSend"),
+  deviceLinkForm: document.getElementById("deviceLinkForm"),
+  deviceUid: document.getElementById("deviceUid"),
+  deviceName: document.getElementById("deviceName"),
+  deviceTokenInfo: document.getElementById("deviceTokenInfo"),
+  connectedDeviceBadge: document.getElementById("connectedDeviceBadge"),
+  disconnectDeviceBtn: document.getElementById("disconnectDeviceBtn"),
+  deviceCommandForm: document.getElementById("deviceCommandForm"),
+  cmdLat: document.getElementById("cmdLat"),
+  cmdLon: document.getElementById("cmdLon"),
+  sendCommandBtn: document.getElementById("sendCommandBtn"),
+
+  refreshHistory: document.getElementById("refreshHistory"),
+  historyList: document.getElementById("historyList"),
+
+  saveBase: document.getElementById("saveBase"),
+  apiBase: document.getElementById("apiBase"),
+  tokenPreview: document.getElementById("tokenPreview"),
+
+  flash: document.getElementById("flash"),
+  confirmModal: document.getElementById("confirmModal"),
+  confirmTitle: document.getElementById("confirmTitle"),
+  confirmMessage: document.getElementById("confirmMessage"),
+  confirmCancel: document.getElementById("confirmCancel"),
+  confirmOk: document.getElementById("confirmOk"),
+  alertWarningModal: document.getElementById("alertWarningModal"),
+  alertWarningTitle: document.getElementById("alertWarningTitle"),
+  alertWarningMessage: document.getElementById("alertWarningMessage"),
+  alertWarningClose: document.getElementById("alertWarningClose"),
+};
+
+function flash(message, kind = "ok") {
+  el.flash.className = `flash ${kind === "err" ? "err" : "ok"} show`;
+  el.flash.textContent = message;
+  if (toastTimer) clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => {
+    el.flash.classList.remove("show");
+  }, 2400);
+}
+
+function setWsStatus(text, cls = "") {
+  if (!el.wsStatus) return;
+  el.wsStatus.className = `pill ${cls}`.trim();
+  el.wsStatus.textContent = `Realtime: ${text}`;
+}
+
+function setAutoSyncStatus(text, cls = "") {
+  if (!el.autoSyncStatus) return;
+  el.autoSyncStatus.className = `pill ${cls}`.trim();
+  el.autoSyncStatus.textContent = `Auto Sync: ${text}`;
+}
+
+function setSosHoldProgress(ratio) {
+  if (!el.triggerSOSBig) return;
+  const pct = Math.max(0, Math.min(1, ratio)) * 100;
+  el.triggerSOSBig.style.setProperty("--hold-progress", `${pct}%`);
+}
+
+function wsBaseFromHttp(baseUrl) {
+  if (baseUrl.startsWith("https://")) return `wss://${baseUrl.slice(8)}`;
+  if (baseUrl.startsWith("http://")) return `ws://${baseUrl.slice(7)}`;
+  if (baseUrl.startsWith("wss://") || baseUrl.startsWith("ws://")) return baseUrl;
+  return `${window.location.protocol === "https:" ? "wss" : "ws"}://${window.location.host}`;
+}
+
+function pingBeep() {
+  try {
+    const AudioCtx = window.AudioContext || window.webkitAudioContext;
+    if (!AudioCtx) return;
+    const ctx = new AudioCtx();
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.type = "sine";
+    osc.frequency.value = 880;
+    gain.gain.value = 0.001;
+    osc.connect(gain);
+    gain.connect(ctx.destination);
+    osc.start();
+    gain.gain.exponentialRampToValueAtTime(0.2, ctx.currentTime + 0.01);
+    gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.22);
+    osc.stop(ctx.currentTime + 0.25);
+  } catch (_) {
+    // Best effort only.
+  }
+}
+
+function initAudioContext() {
+  if (alarmAudioCtx) return alarmAudioCtx;
+  const AudioCtx = window.AudioContext || window.webkitAudioContext;
+  if (!AudioCtx) return null;
+  alarmAudioCtx = new AudioCtx();
+  return alarmAudioCtx;
+}
+
+function alarmToneOnce(freq = 920, ms = 220) {
+  try {
+    const ctx = initAudioContext();
+    if (!ctx) return;
+    if (ctx.state === "suspended") ctx.resume();
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.type = "square";
+    osc.frequency.value = freq;
+    gain.gain.value = 0.001;
+    osc.connect(gain);
+    gain.connect(ctx.destination);
+    osc.start();
+    gain.gain.exponentialRampToValueAtTime(0.23, ctx.currentTime + 0.01);
+    gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + ms / 1000);
+    osc.stop(ctx.currentTime + ms / 1000 + 0.02);
+  } catch (_) {
+    // ignore
+  }
+}
+
+function startAlarmSound() {
+  if (alarmInterval) return;
+  alarmToneOnce(980, 240);
+  alarmInterval = setInterval(() => alarmToneOnce(780, 210), 460);
+}
+
+function stopAlarmSound() {
+  if (alarmInterval) clearInterval(alarmInterval);
+  alarmInterval = null;
+}
+
+function showBrowserNotification(title, body) {
+  if (!("Notification" in window)) return;
+  if (Notification.permission === "granted") {
+    new Notification(title, { body });
+    return;
+  }
+  if (Notification.permission !== "denied") {
+    Notification.requestPermission().then((perm) => {
+      if (perm === "granted") new Notification(title, { body });
+    });
+  }
+}
+
+function stopNotificationsSocket() {
+  if (notifyPingTimer) clearInterval(notifyPingTimer);
+  notifyPingTimer = null;
+  if (notifyReconnectTimer) clearTimeout(notifyReconnectTimer);
+  notifyReconnectTimer = null;
+  if (notifyWs) {
+    try { notifyWs.close(); } catch (_) {}
+  }
+  notifyWs = null;
+  setWsStatus("offline", "err");
+}
+
+function renderWarningModal(item) {
+  if (!item || !el.alertWarningModal) return;
+  el.alertWarningTitle.textContent = item.title;
+  el.alertWarningMessage.textContent = item.message;
+  el.alertWarningModal.classList.add("show");
+  warningOpen = true;
+}
+
+function closeWarningModal() {
+  if (el.alertWarningModal) el.alertWarningModal.classList.remove("show");
+  warningOpen = false;
+  if (warningQueue.length > 0) {
+    renderWarningModal(warningQueue.shift());
+    startAlarmSound();
+    return;
+  }
+  stopAlarmSound();
+}
+
+function queueWarningModal(title, message) {
+  const item = { title, message };
+  if (!warningOpen) {
+    renderWarningModal(item);
+    return;
+  }
+  warningQueue.push(item);
+}
+
+function handleIncomingAlert(msg) {
+  if (!msg) return;
+  const src = (msg.source_type || "app").toUpperCase();
+  // Web-origin alerts should not trigger warning popup/sound on web clients.
+  if (src === "WEB") {
+    if (getPath() === "/history") loadHistory();
+    return;
+  }
+  const from = msg.source_device_uid ? ` (${msg.source_device_uid})` : "";
+  const text = `SOS received from ${src}${from}`;
+  flash(text, src === "DEVICE" ? "err" : "ok");
+  pingBeep();
+  startAlarmSound();
+  queueWarningModal("Emergency Alert", text);
+  if (document.hidden) showBrowserNotification("SOS Alert", text);
+  if (getPath() === "/history") loadHistory();
+}
+
+function startNotificationsSocket() {
+  stopNotificationsSocket();
+  if (!state.token) return;
+  setWsStatus("connecting", "warn");
+
+  const wsUrl = `${wsBaseFromHttp(state.baseUrl)}/ws/notifications?token=${encodeURIComponent(state.token)}`;
+  notifyWs = new WebSocket(wsUrl);
+
+  notifyWs.onopen = () => {
+    setWsStatus("online", "ok");
+    notifyPingTimer = setInterval(() => {
+      if (notifyWs && notifyWs.readyState === WebSocket.OPEN) notifyWs.send("ping");
+    }, 25000);
+  };
+
+  notifyWs.onmessage = (event) => {
+    let msg = null;
+    try { msg = JSON.parse(event.data); } catch { return; }
+    if (!msg || msg.type !== "sos_created") return;
+    handleIncomingAlert(msg);
+  };
+
+  notifyWs.onclose = () => {
+    if (notifyPingTimer) clearInterval(notifyPingTimer);
+    notifyPingTimer = null;
+    setWsStatus("reconnecting", "warn");
+    if (!state.token) return;
+    notifyReconnectTimer = setTimeout(startNotificationsSocket, 3000);
+  };
+
+  notifyWs.onerror = () => {
+    setWsStatus("error", "err");
+  };
+}
+
+function stopAlertPolling() {
+  if (alertPollTimer) clearInterval(alertPollTimer);
+  alertPollTimer = null;
+  alertsBaselineReady = false;
+  lastSeenAlertId = null;
+}
+
+async function pollAlertsForNotifications() {
+  if (!state.token) return;
+  try {
+    const list = await request("/sos/my-alerts");
+    if (!Array.isArray(list) || list.length === 0) return;
+
+    const newest = list[0];
+    const newestId = String(newest.id || newest.sos_id || "");
+    if (!newestId) return;
+
+    if (!alertsBaselineReady) {
+      lastSeenAlertId = newestId;
+      alertsBaselineReady = true;
+      return;
+    }
+
+    if (newestId === lastSeenAlertId) return;
+
+    const newAlerts = [];
+    for (const item of list) {
+      const itemId = String(item.id || item.sos_id || "");
+      if (!itemId || itemId === lastSeenAlertId) break;
+      newAlerts.push(item);
+    }
+
+    // Show oldest-first so toasts read in sequence.
+    newAlerts.reverse().forEach((a) => handleIncomingAlert(a));
+    lastSeenAlertId = newestId;
+  } catch (_) {
+    // Silent fallback poll.
+  }
+}
+
+function startAlertPolling() {
+  stopAlertPolling();
+  if (!state.token) return;
+  pollAlertsForNotifications();
+  alertPollTimer = setInterval(pollAlertsForNotifications, 12000);
+}
+
+function startBackendKeepAlive() {
+  setInterval(async () => {
+    try {
+      await fetch(`${state.baseUrl}/healthz`, { cache: "no-store" });
+    } catch (_) {
+      // Silent keepalive; ignore network errors.
+    }
+  }, 240000);
+}
+
+function confirmPopup(message, title = "Confirm Action") {
+  return new Promise((resolve) => {
+    if (!el.confirmModal || !el.confirmMessage || !el.confirmOk || !el.confirmCancel) {
+      resolve(true);
+      return;
+    }
+    el.confirmTitle.textContent = title;
+    el.confirmMessage.textContent = message;
+    el.confirmModal.classList.add("show");
+
+    const close = (value) => {
+      el.confirmModal.classList.remove("show");
+      el.confirmOk.removeEventListener("click", onOk);
+      el.confirmCancel.removeEventListener("click", onCancel);
+      el.confirmModal.removeEventListener("click", onBackdrop);
+      resolve(value);
+    };
+    const onOk = () => close(true);
+    const onCancel = () => close(false);
+    const onBackdrop = (ev) => {
+      if (ev.target === el.confirmModal) close(false);
+    };
+
+    el.confirmOk.addEventListener("click", onOk);
+    el.confirmCancel.addEventListener("click", onCancel);
+    el.confirmModal.addEventListener("click", onBackdrop);
+  });
+}
+
+function saveState() {
+  localStorage.setItem("sos_base_url", state.baseUrl);
+  localStorage.setItem("sos_token", state.token);
+}
+
+function setHash(path) {
+  if (location.hash !== `#${path}`) location.hash = `#${path}`;
+}
+
+function getPath() {
+  const hash = location.hash || "#/login";
+  return hash.startsWith("#/") ? hash.slice(1) : "/login";
+}
+
+function renderRoute() {
+  const path = getPath();
+  [el.routeLogin, el.routeSignup, el.routeApp, el.routeHistory, el.routeDevices].forEach((p) => p.classList.remove("active"));
+  if (path === "/signup") el.routeSignup.classList.add("active");
+  else if (path === "/app") el.routeApp.classList.add("active");
+  else if (path === "/history") el.routeHistory.classList.add("active");
+  else if (path === "/devices") el.routeDevices.classList.add("active");
+  else el.routeLogin.classList.add("active");
+}
+
+function guardRoute() {
+  const path = getPath();
+  if (!state.token && (path === "/app" || path === "/history" || path === "/devices")) {
+    setHash("/login");
+    return;
+  }
+  if (state.token && (path === "/login" || path === "/signup")) {
+    setHash("/app");
+    return;
+  }
+  renderRoute();
+  syncAutoDeviceTracking();
+  if (path === "/history") loadHistory();
+}
+
+function updateTopRow() {
+  if (el.apiBase) el.apiBase.value = state.baseUrl;
+  if (el.tokenPreview) {
+    el.tokenPreview.textContent = state.token ? `${state.token.slice(0, 24)}...` : "Not logged in";
+  }
+}
+
+async function request(path, options = {}) {
+  const headers = new Headers(options.headers || {});
+  if (!headers.has("Content-Type") && options.body && !(options.body instanceof FormData)) {
+    headers.set("Content-Type", "application/json");
+  }
+  if (state.token) headers.set("Authorization", `Bearer ${state.token}`);
+
+  const res = await fetch(`${state.baseUrl}${path}`, { ...options, headers });
+  const text = await res.text();
+  let data = {};
+  try { data = text ? JSON.parse(text) : {}; } catch { data = { raw: text }; }
+  if (!res.ok) throw new Error(`${res.status}: ${data.detail || res.statusText}`);
+  return data;
+}
+
+function setLocationUI() {
+  if (!state.location) {
+    el.locationState.textContent = "Location: unknown";
+    return;
+  }
+  el.locationState.textContent = `Location: ${state.location.latitude.toFixed(5)}, ${state.location.longitude.toFixed(5)}`;
+}
+
+function getLinkedDeviceUid() {
+  if (el.sendCommandBtn && el.sendCommandBtn.dataset.deviceUid) return el.sendCommandBtn.dataset.deviceUid;
+  if (el.disconnectDeviceBtn && el.disconnectDeviceBtn.dataset.deviceUid) return el.disconnectDeviceBtn.dataset.deviceUid;
+  return "";
+}
+
+function distanceMeters(lat1, lon1, lat2, lon2) {
+  const toRad = (v) => (v * Math.PI) / 180;
+  const R = 6371000;
+  const dLat = toRad(lat2 - lat1);
+  const dLon = toRad(lon2 - lon1);
+  const a =
+    Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+    Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLon / 2) * Math.sin(dLon / 2);
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+  return R * c;
+}
+
+async function queueCoordinatesToDevice(deviceUid, latitude, longitude, silent = true) {
+  await request("/devices/send-coordinates", {
+    method: "POST",
+    body: JSON.stringify({ device_uid: deviceUid, latitude, longitude }),
+  });
+  if (!silent) flash(`Coordinates queued for ${deviceUid}.`);
+}
+
+function stopAutoDeviceSync() {
+  if (geoWatchId !== null) {
+    navigator.geolocation.clearWatch(geoWatchId);
+    geoWatchId = null;
+  }
+  autoSyncLastSentAt = 0;
+  autoSyncLastLat = null;
+  autoSyncLastLon = null;
+  setAutoSyncStatus("off", "warn");
+}
+
+function syncAutoDeviceTracking() {
+  const shouldRun = !!state.token && getPath() === "/app" && !!getLinkedDeviceUid();
+  if (!shouldRun) {
+    stopAutoDeviceSync();
+    return;
+  }
+  if (geoWatchId !== null) return;
+  if (!navigator.geolocation) return;
+  setAutoSyncStatus("on", "ok");
+
+  geoWatchId = navigator.geolocation.watchPosition(
+    async (pos) => {
+      const lat = pos.coords.latitude;
+      const lon = pos.coords.longitude;
+      state.location = { latitude: lat, longitude: lon };
+      setLocationUI();
+
+      const now = Date.now();
+      if (now - autoSyncLastSentAt < AUTO_SYNC_MIN_INTERVAL_MS) return;
+
+      if (autoSyncLastLat !== null && autoSyncLastLon !== null) {
+        const moved = distanceMeters(autoSyncLastLat, autoSyncLastLon, lat, lon);
+        if (moved < AUTO_SYNC_MIN_DISTANCE_M) return;
+      }
+
+      const deviceUid = getLinkedDeviceUid();
+      if (!deviceUid) return;
+      try {
+        await queueCoordinatesToDevice(deviceUid, lat, lon, true);
+        autoSyncLastSentAt = now;
+        autoSyncLastLat = lat;
+        autoSyncLastLon = lon;
+      } catch (_) {
+        // Silent for background auto-sync.
+      }
+    },
+    () => {
+      // Silent geolocation watcher errors.
+    },
+    { enableHighAccuracy: true, maximumAge: 5000, timeout: 12000 }
+  );
+}
+
+function captureLocation() {
+  return new Promise((resolve, reject) => {
+    if (!navigator.geolocation) {
+      reject(new Error("Geolocation not supported"));
+      return;
+    }
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        state.location = { latitude: pos.coords.latitude, longitude: pos.coords.longitude };
+        setLocationUI();
+        resolve(state.location);
+      },
+      (err) => reject(new Error(err.message || "Location failed")),
+      { enableHighAccuracy: true, timeout: 12000 }
+    );
+  });
+}
+
+async function sendSOS() {
+  if (sendingSOS) return;
+  sendingSOS = true;
+  try {
+    const loc = await captureLocation();
+    await request("/sos/create", { method: "POST", body: JSON.stringify(loc) });
+    el.lastSend.textContent = `Last alert sent: ${new Date().toLocaleString()}`;
+    flash("SOS sent.");
+  } catch (error) {
+    flash(`SOS failed: ${error.message}`, "err");
+  } finally {
+    sendingSOS = false;
+  }
+}
+
+function stopSosHold() {
+  sosHoldActive = false;
+  if (sosHoldRaf) cancelAnimationFrame(sosHoldRaf);
+  sosHoldRaf = null;
+  if (el.triggerSOSBig) el.triggerSOSBig.classList.remove("holding");
+  setSosHoldProgress(0);
+}
+
+function sosHoldTick(ts) {
+  if (!sosHoldActive) return;
+  const elapsed = ts - sosHoldStartedAt;
+  const ratio = Math.min(1, elapsed / SOS_HOLD_MS);
+  setSosHoldProgress(ratio);
+
+  if (ratio >= 1 && !sosHoldSent) {
+    sosHoldSent = true;
+    stopSosHold();
+    sendSOS();
+    return;
+  }
+  sosHoldRaf = requestAnimationFrame(sosHoldTick);
+}
+
+function startSosHold(e) {
+  if (!el.triggerSOSBig) return;
+  if (sendingSOS) return;
+  if (e) e.preventDefault();
+  sosHoldActive = true;
+  sosHoldSent = false;
+  sosHoldStartedAt = performance.now();
+  el.triggerSOSBig.classList.add("holding");
+  setSosHoldProgress(0);
+  sosHoldRaf = requestAnimationFrame(sosHoldTick);
+}
+
+function releaseSosHold() {
+  if (!sosHoldActive) return;
+  if (sosHoldSent) return;
+  stopSosHold();
+}
+
+function renderHistory(items) {
+  el.historyList.innerHTML = "";
+  if (!Array.isArray(items) || items.length === 0) {
+    el.historyList.innerHTML = "<li>No alerts yet.</li>";
+    return;
+  }
+  items.forEach((it) => {
+    const li = document.createElement("li");
+    const created = it.created_at ? new Date(it.created_at).toLocaleString() : "N/A";
+    li.innerHTML = `<strong>${it.status || "active"}</strong><br>Lat: ${Number(it.latitude).toFixed(5)} | Lon: ${Number(it.longitude).toFixed(5)}<br><small>${created}</small>`;
+    el.historyList.appendChild(li);
+  });
+}
+
+async function loadHistory() {
+  try {
+    const data = await request("/sos/my-alerts");
+    renderHistory(data);
+  } catch (error) {
+    flash(`History failed: ${error.message}`, "err");
+  }
+}
+
+async function refreshDeviceInfo() {
+  if (!state.token || !el.deviceTokenInfo) return;
+  try {
+    const devices = await request("/devices/my");
+    if (!Array.isArray(devices) || devices.length === 0) {
+      el.deviceTokenInfo.textContent = "No device connected yet.";
+      if (el.connectedDeviceBadge) el.connectedDeviceBadge.textContent = "Device: none";
+      if (el.headerDeviceState) el.headerDeviceState.textContent = "Device: not connected";
+      if (el.disconnectDeviceBtn) el.disconnectDeviceBtn.disabled = true;
+      if (el.sendCommandBtn) el.sendCommandBtn.disabled = true;
+      if (el.sendCommandBtn) el.sendCommandBtn.dataset.deviceUid = "";
+      if (el.disconnectDeviceBtn) el.disconnectDeviceBtn.dataset.deviceUid = "";
+      syncAutoDeviceTracking();
+      return;
+    }
+    const d = devices[0];
+    el.deviceTokenInfo.textContent = `Linked: ${d.device_uid} | Token: ${d.device_token}`;
+    if (el.connectedDeviceBadge) el.connectedDeviceBadge.textContent = `Device: ${d.device_uid}`;
+    if (el.headerDeviceState) el.headerDeviceState.textContent = `Device: connected (${d.device_uid})`;
+    if (el.disconnectDeviceBtn) {
+      el.disconnectDeviceBtn.disabled = false;
+      el.disconnectDeviceBtn.dataset.deviceUid = d.device_uid;
+    }
+    if (el.sendCommandBtn) {
+      el.sendCommandBtn.disabled = false;
+      el.sendCommandBtn.dataset.deviceUid = d.device_uid;
+    }
+    syncAutoDeviceTracking();
+  } catch (error) {
+    el.deviceTokenInfo.textContent = "Could not load device info.";
+    if (el.connectedDeviceBadge) el.connectedDeviceBadge.textContent = "Device: unavailable";
+    if (el.headerDeviceState) el.headerDeviceState.textContent = "Device: unavailable";
+    if (el.sendCommandBtn) el.sendCommandBtn.disabled = true;
+    syncAutoDeviceTracking();
+  }
+}
+
+if (el.saveBase && el.apiBase) {
+  el.saveBase.addEventListener("click", () => {
+    state.baseUrl = el.apiBase.value.trim().replace(/\/$/, "") || window.location.origin;
+    saveState();
+    updateTopRow();
+    flash("API base saved.");
+  });
+}
+
+el.loginForm.addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const fd = new FormData(el.loginForm);
+  const body = new URLSearchParams();
+  body.set("username", String(fd.get("phone") || ""));
+  body.set("password", String(fd.get("password") || ""));
+  try {
+    const data = await request("/auth/login", {
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body,
+    });
+    state.token = data.access_token || "";
+    saveState();
+    updateTopRow();
+    refreshDeviceInfo();
+    startNotificationsSocket();
+    startAlertPolling();
+    setHash("/app");
+    flash("Logged in.");
+  } catch (error) {
+    flash(`Login failed: ${error.message}`, "err");
+  }
+});
+
+el.registerForm.addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const payload = Object.fromEntries(new FormData(el.registerForm).entries());
+  try {
+    await request("/auth/register", { method: "POST", body: JSON.stringify(payload) });
+
+    const body = new URLSearchParams();
+    body.set("username", String(payload.phone));
+    body.set("password", String(payload.password));
+    const data = await request("/auth/login", {
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body,
+    });
+
+    state.token = data.access_token || "";
+    saveState();
+    updateTopRow();
+    refreshDeviceInfo();
+    startNotificationsSocket();
+    startAlertPolling();
+    setHash("/app");
+    flash("Account created.");
+  } catch (error) {
+    flash(`Sign up failed: ${error.message}`, "err");
+  }
+});
+
+if (el.deviceLinkForm) {
+  el.deviceLinkForm.addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const payload = {
+      device_uid: String(el.deviceUid.value || "").trim(),
+      device_name: String(el.deviceName.value || "").trim() || null,
+    };
+    try {
+      const data = await request("/devices/link", {
+        method: "POST",
+        body: JSON.stringify(payload),
+      });
+      el.deviceTokenInfo.textContent = `Linked: ${data.device_uid} | Token: ${data.device_token}`;
+      if (el.headerDeviceState) el.headerDeviceState.textContent = `Device: connected (${data.device_uid})`;
+      refreshDeviceInfo();
+      flash("Device connected. Copy token to NodeMCU firmware.");
+    } catch (error) {
+      flash(`Device link failed: ${error.message}`, "err");
+    }
+  });
+}
+
+if (el.deviceCommandForm) {
+  el.deviceCommandForm.addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const deviceUid = (el.sendCommandBtn && el.sendCommandBtn.dataset.deviceUid) || "";
+    if (!deviceUid) {
+      flash("No connected device.", "err");
+      return;
+    }
+
+    const latitude = Number(el.cmdLat.value);
+    const longitude = Number(el.cmdLon.value);
+    if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) {
+      flash("Enter valid coordinates.", "err");
+      return;
+    }
+
+    try {
+      await queueCoordinatesToDevice(deviceUid, latitude, longitude, false);
+    } catch (error) {
+      flash(`Send coordinates failed: ${error.message}`, "err");
+    }
+  });
+}
+
+if (el.disconnectDeviceBtn) {
+  el.disconnectDeviceBtn.addEventListener("click", async () => {
+    const deviceUid = el.disconnectDeviceBtn.dataset.deviceUid || "";
+    if (!deviceUid) {
+      flash("No connected device to disconnect.", "err");
+      return;
+    }
+    const ok = await confirmPopup(`Disconnect ${deviceUid}?`, "Disconnect Device");
+    if (!ok) return;
+    try {
+      await request("/devices/unlink", {
+        method: "POST",
+        body: JSON.stringify({ device_uid: deviceUid }),
+      });
+      flash("Device disconnected.");
+      refreshDeviceInfo();
+    } catch (error) {
+      flash(`Disconnect failed: ${error.message}`, "err");
+    }
+  });
+}
+
+function logout() {
+  stopNotificationsSocket();
+  stopAlertPolling();
+  stopAlarmSound();
+  stopAutoDeviceSync();
+  warningQueue = [];
+  closeWarningModal();
+  state.token = "";
+  saveState();
+  updateTopRow();
+  if (el.deviceTokenInfo) el.deviceTokenInfo.textContent = "No device connected yet.";
+  if (el.connectedDeviceBadge) el.connectedDeviceBadge.textContent = "Device: none";
+  if (el.headerDeviceState) el.headerDeviceState.textContent = "Device: not connected";
+  if (el.lastSend) el.lastSend.textContent = "No alert sent yet.";
+  if (el.disconnectDeviceBtn) {
+    el.disconnectDeviceBtn.disabled = true;
+    el.disconnectDeviceBtn.dataset.deviceUid = "";
+  }
+  if (el.sendCommandBtn) {
+    el.sendCommandBtn.disabled = true;
+    el.sendCommandBtn.dataset.deviceUid = "";
+  }
+  setHash("/login");
+  flash("Logged out.");
+}
+
+el.logoutBtn.addEventListener("click", logout);
+el.logoutBtn2.addEventListener("click", logout);
+el.logoutBtn3.addEventListener("click", logout);
+el.goHistory.addEventListener("click", () => setHash("/history"));
+el.goDevices.addEventListener("click", () => setHash("/devices"));
+el.goDevicesFromHistory.addEventListener("click", () => setHash("/devices"));
+el.goApp.addEventListener("click", () => setHash("/app"));
+el.goAppFromDevices.addEventListener("click", () => setHash("/app"));
+el.goHistoryFromDevices.addEventListener("click", () => setHash("/history"));
+el.refreshHistory.addEventListener("click", loadHistory);
+el.detectLocation.addEventListener("click", async () => {
+  try {
+    await captureLocation();
+    flash("Location updated.");
+  } catch (error) {
+    flash(`Location failed: ${error.message}`, "err");
+  }
+});
+el.triggerSOSBig.addEventListener("pointerdown", startSosHold);
+el.triggerSOSBig.addEventListener("pointerup", releaseSosHold);
+el.triggerSOSBig.addEventListener("pointercancel", releaseSosHold);
+el.triggerSOSBig.addEventListener("pointerleave", releaseSosHold);
+if (el.alertWarningClose) el.alertWarningClose.addEventListener("click", closeWarningModal);
+window.addEventListener("pointerdown", () => {
+  const ctx = initAudioContext();
+  if (ctx && ctx.state === "suspended") ctx.resume();
+}, { once: true });
+
+window.addEventListener("hashchange", guardRoute);
+updateTopRow();
+setLocationUI();
+if (!location.hash) setHash(state.token ? "/app" : "/login");
+guardRoute();
+refreshDeviceInfo();
+startNotificationsSocket();
+startAlertPolling();
+startBackendKeepAlive();
+setWsStatus(state.token ? "connecting" : "offline", state.token ? "warn" : "err");
+setAutoSyncStatus("off", "warn");
+flash("Ready.");
+
+</script>
 </body>
 </html>
