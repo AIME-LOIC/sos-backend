@@ -388,7 +388,11 @@ def create_sos_from_device(payload: DeviceSOSCreate, db: Session = Depends(get_d
 # ---------------- ADMIN ROUTES ----------------
 
 @app.get("/admin/all-alerts")
-def get_all_alerts(db: Session = Depends(get_db)):
+def get_all_alerts(
+    admin_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    require_admin(admin_user)
     rows = (
         db.query(SOSAlert, User)
         .join(User, SOSAlert.user_id == User.id)
@@ -420,7 +424,12 @@ def get_all_alerts(db: Session = Depends(get_db)):
     ]
 
 @app.put("/admin/alerts/{alert_id}/deactivate")
-def deactivate_alert(alert_id: str, db: Session = Depends(get_db)):
+def deactivate_alert(
+    alert_id: str,
+    admin_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    require_admin(admin_user)
     try:
         alert_uuid = uuid.UUID(alert_id)
     except ValueError:
@@ -436,7 +445,12 @@ def deactivate_alert(alert_id: str, db: Session = Depends(get_db)):
     return {"message": "Alert deactivated", "id": alert.id, "status": alert.status}
 
 @app.delete("/admin/alerts/{alert_id}")
-def delete_alert(alert_id: str, db: Session = Depends(get_db)):
+def delete_alert(
+    alert_id: str,
+    admin_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    require_admin(admin_user)
     try:
         alert_uuid = uuid.UUID(alert_id)
     except ValueError:
@@ -482,7 +496,12 @@ def admin_unlink_device(
     }
 
 @app.get("/admin/user/{user_id}")
-def get_user_for_admin(user_id: str, db: Session = Depends(get_db)):
+def get_user_for_admin(
+    user_id: str,
+    admin_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    require_admin(admin_user)
     try:
         user_uuid = uuid.UUID(user_id)
     except ValueError:
@@ -506,7 +525,11 @@ def get_user_for_admin(user_id: str, db: Session = Depends(get_db)):
 import time # Add at top
 
 @app.post("/admin/analyze-location")
-async def analyze_location(data: dict = Body(...)):
+async def analyze_location(
+    data: dict = Body(...),
+    admin_user: User = Depends(get_current_user),
+):
+    require_admin(admin_user)
     lat = data.get("latitude")
     lon = data.get("longitude")
     

@@ -1,6 +1,6 @@
 #include <ESP8266WiFi.h>
 #include <ESP8266HTTPClient.h>
-#include <WiFiClientSecure.h>
+#include <WiFiClientSecureBearSSL.h>
 #include <ESP8266WebServer.h>
 #include <EEPROM.h>
 
@@ -39,6 +39,18 @@ String deviceUid() {
   return "NODEMCU_" + String(ESP.getChipId(), HEX);
 }
 
+String backendHostFromUrl() {
+  String s = String(cfg.backendUrl);
+  s.trim();
+  if (s.startsWith("https://")) s = s.substring(8);
+  if (s.startsWith("http://")) s = s.substring(7);
+  int slash = s.indexOf('/');
+  if (slash >= 0) s = s.substring(0, slash);
+  int colon = s.indexOf(':');
+  if (colon >= 0) s = s.substring(0, colon);
+  return s;
+}
+
 void safeCopy(char* dst, size_t dstSize, const String& src) {
   if (dstSize == 0) return;
   size_t n = src.length();
@@ -70,7 +82,6 @@ bool hasRequiredConfig() {
 bool connectWifi(uint32_t timeoutMs = 20000) {
   if (WiFi.status() == WL_CONNECTED) return true;
 
-  WiFi.mode(WIFI_AP_STA);
   WiFi.begin(cfg.wifiSsid, cfg.wifiPass);
   Serial.print("WiFi connecting");
 
@@ -166,16 +177,48 @@ bool sendSOS(float lat, float lon) {
     return false;
   }
 
+  // Reduce RAM pressure for TLS by temporarily switching from AP+STA to STA.
+  WiFiMode_t prevMode = WiFi.getMode();
+  bool hadAp = (prevMode == WIFI_AP || prevMode == WIFI_AP_STA);
+  String apName = "SOS-SETUP-" + String(ESP.getChipId(), HEX);
+  if (hadAp) {
+    server.stop();
+    WiFi.softAPdisconnect(true);
+    WiFi.mode(WIFI_STA);
+    delay(200);
+  }
+
+  if (WiFi.status() != WL_CONNECTED) {
+    // Reconnect in pure STA mode for a cleaner TLS path.
+    WiFi.begin(cfg.wifiSsid, cfg.wifiPass);
+    unsigned long start = millis();
+    while (WiFi.status() != WL_CONNECTED && millis() - start < 8000) {
+      delay(200);
+    }
+  }
+
+  Serial.print("Free heap before HTTPS: ");
+  Serial.println(ESP.getFreeHeap());
+
   String backend = String(cfg.backendUrl);
+  backend.trim();
   if (backend.endsWith("/")) backend.remove(backend.length() - 1);
 
-  WiFiClientSecure client;
+  BearSSL::WiFiClientSecure client;
   client.setInsecure();
+  // Render TLS can fail with very small buffers on ESP8266.
+  client.setBufferSizes(4096, 1024);
   HTTPClient http;
+  http.setTimeout(15000);
 
   String url = backend + String(sosEndpoint);
   if (!http.begin(client, url)) {
     Serial.println("HTTP begin failed");
+    if (hadAp) {
+      WiFi.mode(WIFI_AP_STA);
+      WiFi.softAP(apName.c_str(), "12345678");
+      server.begin();
+    }
     return false;
   }
 
@@ -187,12 +230,62 @@ bool sendSOS(float lat, float lon) {
 
   int code = http.POST(payload);
   String body = http.getString();
+  if (code <= 0) {
+    Serial.print("HTTP error: ");
+    Serial.println(http.errorToString(code).c_str());
+  }
   http.end();
+
+  // Restore AP portal
+  if (hadAp) {
+    WiFi.mode(WIFI_AP_STA);
+    WiFi.softAP(apName.c_str(), "12345678");
+    server.begin();
+  }
 
   Serial.print("POST /device/sos => ");
   Serial.println(code);
   Serial.println(body);
   return code >= 200 && code < 300;
+}
+
+void printNetworkDebug() {
+  Serial.print("WiFi.status=");
+  Serial.println((int)WiFi.status());
+  Serial.print("STA IP=");
+  Serial.println(WiFi.localIP());
+  Serial.print("Gateway=");
+  Serial.println(WiFi.gatewayIP());
+  Serial.print("DNS=");
+  Serial.println(WiFi.dnsIP());
+
+  String host = backendHostFromUrl();
+  Serial.print("Backend host=");
+  Serial.println(host);
+
+  IPAddress resolved;
+  bool dnsOk = WiFi.hostByName(host.c_str(), resolved);
+  Serial.print("DNS resolve: ");
+  if (dnsOk) {
+    Serial.print("OK -> ");
+    Serial.println(resolved);
+  } else {
+    Serial.println("FAILED");
+  }
+
+  WiFiClient tcpClient;
+  bool tcpOk = tcpClient.connect(host.c_str(), 443);
+  Serial.print("TCP connect 443: ");
+  Serial.println(tcpOk ? "OK" : "FAILED");
+  if (tcpOk) tcpClient.stop();
+
+  BearSSL::WiFiClientSecure tlsClient;
+  tlsClient.setInsecure();
+  tlsClient.setBufferSizes(4096, 1024);
+  bool tlsOk = tlsClient.connect(host.c_str(), 443);
+  Serial.print("TLS connect 443: ");
+  Serial.println(tlsOk ? "OK" : "FAILED");
+  if (tlsOk) tlsClient.stop();
 }
 
 void setup() {
@@ -210,6 +303,7 @@ void setup() {
   loadConfig();
 
   // Always keep setup AP+portal available.
+  WiFi.mode(WIFI_AP_STA);
   startConfigPortal();
 
   // Hold button during boot only to indicate setup mode preference in logs.
@@ -249,6 +343,7 @@ void loop() {
     stableState = reading;
     if (stableState == LOW) {
       Serial.println("BUTTON PRESSED -> sending SOS...");
+      printNetworkDebug();
       bool ok = sendSOS(fallbackLat, fallbackLon);
       Serial.println(ok ? "SOS sent" : "SOS failed");
     } else {

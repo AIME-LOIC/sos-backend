@@ -44,6 +44,11 @@ const el = {
   tokenPreview: document.getElementById("tokenPreview"),
 
   flash: document.getElementById("flash"),
+  confirmModal: document.getElementById("confirmModal"),
+  confirmTitle: document.getElementById("confirmTitle"),
+  confirmMessage: document.getElementById("confirmMessage"),
+  confirmCancel: document.getElementById("confirmCancel"),
+  confirmOk: document.getElementById("confirmOk"),
 };
 
 function flash(message, kind = "ok") {
@@ -53,6 +58,35 @@ function flash(message, kind = "ok") {
   toastTimer = setTimeout(() => {
     el.flash.classList.remove("show");
   }, 2400);
+}
+
+function confirmPopup(message, title = "Confirm Action") {
+  return new Promise((resolve) => {
+    if (!el.confirmModal || !el.confirmMessage || !el.confirmOk || !el.confirmCancel) {
+      resolve(true);
+      return;
+    }
+    el.confirmTitle.textContent = title;
+    el.confirmMessage.textContent = message;
+    el.confirmModal.classList.add("show");
+
+    const close = (value) => {
+      el.confirmModal.classList.remove("show");
+      el.confirmOk.removeEventListener("click", onOk);
+      el.confirmCancel.removeEventListener("click", onCancel);
+      el.confirmModal.removeEventListener("click", onBackdrop);
+      resolve(value);
+    };
+    const onOk = () => close(true);
+    const onCancel = () => close(false);
+    const onBackdrop = (ev) => {
+      if (ev.target === el.confirmModal) close(false);
+    };
+
+    el.confirmOk.addEventListener("click", onOk);
+    el.confirmCancel.addEventListener("click", onCancel);
+    el.confirmModal.addEventListener("click", onBackdrop);
+  });
 }
 
 function saveState() {
@@ -283,7 +317,8 @@ if (el.disconnectDeviceBtn) {
       flash("No connected device to disconnect.", "err");
       return;
     }
-    if (!confirm(`Disconnect ${deviceUid}?`)) return;
+    const ok = await confirmPopup(`Disconnect ${deviceUid}?`, "Disconnect Device");
+    if (!ok) return;
     try {
       await request("/devices/unlink", {
         method: "POST",

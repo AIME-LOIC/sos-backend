@@ -139,6 +139,28 @@ button.ghost { background: #eef3f9; color: #1d3249; }
 .flash.err { background: #8f1f27; }
 .flash.show { opacity: 1; transform: translateY(0); }
 
+.modal {
+  position: fixed;
+  inset: 0;
+  background: rgba(11, 19, 33, 0.48);
+  display: none;
+  place-items: center;
+  padding: 1rem;
+  z-index: 50;
+}
+
+.modal.show { display: grid; }
+
+.modal-card {
+  width: min(440px, 95vw);
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  padding: 1rem;
+}
+
+.modal-card h3 { margin: 0 0 0.5rem; }
+
 @media (max-width: 640px) {
   .app-top { flex-direction: column; align-items: flex-start; gap: 0.55rem; }
 }
