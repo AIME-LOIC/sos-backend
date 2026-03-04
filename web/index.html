@@ -302,32 +302,51 @@ button.ghost { background: var(--primary-soft); color: #1d3249; }
 
 /* Guardian-style visual overrides */
 body {
-  background: #e8eaee;
+  background: linear-gradient(180deg, #edf1f6 0%, #e5e8ed 100%);
 }
 
 .shell {
-  width: min(1200px, 100%);
+  width: min(1160px, 100%);
+  padding: 0 0.6rem;
 }
 
 .app-page {
-  gap: 0.75rem;
+  gap: 0;
 }
 
 .app-top {
-  border-radius: 12px 12px 0 0;
-  border-bottom: 0;
+  border-radius: 14px 14px 0 0;
+  border: 1px solid #d8dee7;
+  border-bottom: 1px solid #dde3ec;
   background: #ffffff;
-  padding: 0.95rem 1.2rem;
+  padding: 1rem 1.25rem;
+  box-shadow: none;
+}
+
+.brand-area {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+}
+
+.brand-shield {
+  width: 18px;
+  height: 18px;
+  border: 2px solid #2c66ea;
+  border-radius: 5px;
+  transform: rotate(45deg);
+  display: inline-block;
 }
 
 .brand-area h2 {
   color: #2563eb;
-  font-size: 1.85rem;
+  font-size: 2rem;
   letter-spacing: 0.01em;
+  margin: 0;
 }
 
 .status-inline {
-  margin-top: 0.35rem;
+  margin-top: 0;
 }
 
 .pill {
@@ -338,16 +357,17 @@ body {
 .top-actions {
   display: flex;
   align-items: center;
-  gap: 0.9rem;
+  gap: 1.2rem;
 }
 
 .top-actions button {
   background: transparent;
-  color: #5a6b84;
+  color: #607089;
   border-radius: 0;
   padding: 0;
-  font-weight: 700;
+  font-weight: 600;
   min-height: auto;
+  letter-spacing: 0.01em;
 }
 
 .top-actions button:hover {
@@ -361,13 +381,14 @@ body {
 
 .nav-home {
   color: #1f2937;
-  font-weight: 800;
+  font-weight: 700;
 }
 
 .system-state {
   color: #0f9f58;
-  font-size: 0.84rem;
+  font-size: 0.85rem;
   font-weight: 800;
+  margin-left: auto;
 }
 
 .status-card {
@@ -375,36 +396,73 @@ body {
   box-shadow: none;
   border-top: 0;
   border-bottom: 0;
+  background: #f4f6fa;
+  padding: 0.75rem 1.15rem;
 }
 
 .app-card {
-  min-height: 58vh;
-  background: #eef0f2;
-  border-radius: 0 0 12px 12px;
+  min-height: 64vh;
+  background: #f0f2f5;
+  border-radius: 0 0 14px 14px;
   border-top: 0;
   display: grid;
   align-content: center;
   justify-items: center;
-  gap: 0.7rem;
-  box-shadow: 0 6px 26px rgba(22, 29, 45, 0.08);
+  gap: 0.55rem;
+  box-shadow: 0 12px 30px rgba(16, 24, 39, 0.06);
 }
 
 .sos-button {
-  width: min(78vw, 280px);
-  margin: 0.5rem auto 0.4rem;
-  box-shadow: 0 12px 30px rgba(216, 31, 38, 0.32), inset 0 -10px 18px rgba(0, 0, 0, 0.15);
+  width: min(72vw, 300px);
+  margin: 0.15rem auto 0.1rem;
+  display: grid;
+  align-content: center;
+  justify-items: center;
+  gap: 0.2rem;
+  box-shadow: 0 16px 38px rgba(216, 31, 38, 0.3), inset 0 -8px 16px rgba(0, 0, 0, 0.15);
+}
+
+.sos-main {
+  font-size: clamp(3rem, 7vw, 3.4rem);
+  line-height: 1;
+  font-weight: 700;
+}
+
+.sos-sub {
+  font-size: clamp(0.82rem, 2vw, 1rem);
+  letter-spacing: 0.05em;
+  font-weight: 700;
 }
 
 .focus-title {
-  margin: 0;
-  font-size: 2rem;
+  margin: 0.8rem 0 0;
+  font-size: clamp(1.7rem, 3vw, 2.2rem);
   font-weight: 800;
   color: #1d273a;
 }
 
+.focus-sub {
+  margin: 0;
+  color: #677892;
+  font-size: 1rem;
+}
+
+.hold-hint {
+  color: #677892;
+  margin-top: 0.15rem;
+}
+
+.center-row button {
+  background: #edf3ff;
+  color: #365173;
+  border: 1px solid #c8d8f8;
+}
+
 .history-card {
-  border-radius: 0 0 12px 12px;
+  border-radius: 0 0 14px 14px;
   border-top: 0;
+  min-height: 64vh;
+  box-shadow: 0 12px 30px rgba(16, 24, 39, 0.06);
 }
 
 .history-list {
@@ -422,6 +480,18 @@ body {
 .history-list li:nth-child(even) {
   border-left-color: #3a73e9;
   background: #e9edf3;
+}
+
+.history-heading {
+  margin: 0;
+  font-size: 2.2rem;
+  color: #111a2e;
+}
+
+.close-link {
+  font-size: 1.05rem;
+  color: #6b7c97;
+  text-decoration: none;
 }
 
 </style>
@@ -460,7 +530,8 @@ body {
     <section id="routeApp" class="page app-page">
       <header class="app-top">
         <div class="brand-area">
-          <h2>🛡 Guardian</h2>
+          <span class="brand-shield" aria-hidden="true"></span>
+          <h2>Guardian</h2>
           <div class="status-inline">
             <span id="wsStatus" class="pill">Realtime: connecting</span>
             <span id="autoSyncStatus" class="pill">Auto Sync: off</span>
@@ -484,9 +555,10 @@ body {
       </article>
 
       <article class="card app-card">
-        <button id="triggerSOSBig" type="button" class="sos-button">SEND SOS</button>
+        <button id="triggerSOSBig" type="button" class="sos-button"><span class="sos-main">SOS</span><span class="sos-sub">PRESS TO ALERT</span></button>
         <p class="small hold-hint">Hold button until ring completes to send SOS.</p>
         <p class="focus-title">Location Secured</p>
+        <p class="focus-sub">Calculating coordinates...</p>
         <div class="row center-row">
           <button id="detectLocation" type="button">Update Location</button>
         </div>
@@ -495,17 +567,22 @@ body {
 
     <section id="routeHistory" class="page app-page">
       <header class="app-top">
-        <h2>HISTORY</h2>
+        <div class="brand-area">
+          <span class="brand-shield" aria-hidden="true"></span>
+          <h2>Guardian</h2>
+        </div>
         <nav class="top-actions">
-          <button id="goDevicesFromHistory" type="button">Devices</button>
-          <button id="goApp" type="button">Back</button>
+          <button id="goApp" type="button">Home</button>
+          <span class="nav-home">History</span>
+          <button id="goDevicesFromHistory" type="button">Contacts</button>
           <button id="logoutBtn2" type="button" class="ghost">Logout</button>
         </nav>
+        <span class="close-link">× Close</span>
       </header>
 
       <article class="card history-card">
         <div class="row between">
-          <p class="small">Recent SOS requests (latest first)</p>
+          <h3 class="history-heading">Recent Alerts</h3>
           <button id="refreshHistory" type="button">Refresh</button>
         </div>
         <ul id="historyList" class="history-list"></ul>
