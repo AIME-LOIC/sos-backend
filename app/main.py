@@ -393,6 +393,37 @@ def get_all_alerts(db: Session = Depends(get_db)):
         for alert, user in rows
     ]
 
+@app.put("/admin/alerts/{alert_id}/deactivate")
+def deactivate_alert(alert_id: str, db: Session = Depends(get_db)):
+    try:
+        alert_uuid = uuid.UUID(alert_id)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid alert id")
+
+    alert = db.query(SOSAlert).filter(SOSAlert.id == alert_uuid).first()
+    if not alert:
+        raise HTTPException(status_code=404, detail="Alert not found")
+
+    alert.status = "inactive"
+    db.commit()
+    db.refresh(alert)
+    return {"message": "Alert deactivated", "id": alert.id, "status": alert.status}
+
+@app.delete("/admin/alerts/{alert_id}")
+def delete_alert(alert_id: str, db: Session = Depends(get_db)):
+    try:
+        alert_uuid = uuid.UUID(alert_id)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid alert id")
+
+    alert = db.query(SOSAlert).filter(SOSAlert.id == alert_uuid).first()
+    if not alert:
+        raise HTTPException(status_code=404, detail="Alert not found")
+
+    db.delete(alert)
+    db.commit()
+    return {"message": "Alert deleted", "id": str(alert_uuid)}
+
 @app.post("/admin/devices/unlink")
 def admin_unlink_device(
     data: AdminDeviceUnlinkRequest,
