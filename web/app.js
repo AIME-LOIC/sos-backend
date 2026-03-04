@@ -45,6 +45,8 @@ const el = {
   triggerSOSBig: document.getElementById("triggerSOSBig"),
   locationState: document.getElementById("locationState"),
   headerDeviceState: document.getElementById("headerDeviceState"),
+  wsStatus: document.getElementById("wsStatus"),
+  autoSyncStatus: document.getElementById("autoSyncStatus"),
   lastSend: document.getElementById("lastSend"),
   deviceLinkForm: document.getElementById("deviceLinkForm"),
   deviceUid: document.getElementById("deviceUid"),
@@ -83,6 +85,18 @@ function flash(message, kind = "ok") {
   toastTimer = setTimeout(() => {
     el.flash.classList.remove("show");
   }, 2400);
+}
+
+function setWsStatus(text, cls = "") {
+  if (!el.wsStatus) return;
+  el.wsStatus.className = `pill ${cls}`.trim();
+  el.wsStatus.textContent = `Realtime: ${text}`;
+}
+
+function setAutoSyncStatus(text, cls = "") {
+  if (!el.autoSyncStatus) return;
+  el.autoSyncStatus.className = `pill ${cls}`.trim();
+  el.autoSyncStatus.textContent = `Auto Sync: ${text}`;
 }
 
 function wsBaseFromHttp(baseUrl) {
@@ -175,6 +189,7 @@ function stopNotificationsSocket() {
     try { notifyWs.close(); } catch (_) {}
   }
   notifyWs = null;
+  setWsStatus("offline", "err");
 }
 
 function renderWarningModal(item) {
@@ -221,11 +236,13 @@ function handleIncomingAlert(msg) {
 function startNotificationsSocket() {
   stopNotificationsSocket();
   if (!state.token) return;
+  setWsStatus("connecting", "warn");
 
   const wsUrl = `${wsBaseFromHttp(state.baseUrl)}/ws/notifications?token=${encodeURIComponent(state.token)}`;
   notifyWs = new WebSocket(wsUrl);
 
   notifyWs.onopen = () => {
+    setWsStatus("online", "ok");
     notifyPingTimer = setInterval(() => {
       if (notifyWs && notifyWs.readyState === WebSocket.OPEN) notifyWs.send("ping");
     }, 25000);
@@ -241,12 +258,13 @@ function startNotificationsSocket() {
   notifyWs.onclose = () => {
     if (notifyPingTimer) clearInterval(notifyPingTimer);
     notifyPingTimer = null;
+    setWsStatus("reconnecting", "warn");
     if (!state.token) return;
     notifyReconnectTimer = setTimeout(startNotificationsSocket, 3000);
   };
 
   notifyWs.onerror = () => {
-    // Connection retry handled by onclose.
+    setWsStatus("error", "err");
   };
 }
 
@@ -439,6 +457,7 @@ function stopAutoDeviceSync() {
   autoSyncLastSentAt = 0;
   autoSyncLastLat = null;
   autoSyncLastLon = null;
+  setAutoSyncStatus("off", "warn");
 }
 
 function syncAutoDeviceTracking() {
@@ -449,6 +468,7 @@ function syncAutoDeviceTracking() {
   }
   if (geoWatchId !== null) return;
   if (!navigator.geolocation) return;
+  setAutoSyncStatus("on", "ok");
 
   geoWatchId = navigator.geolocation.watchPosition(
     async (pos) => {
@@ -762,4 +782,6 @@ refreshDeviceInfo();
 startNotificationsSocket();
 startAlertPolling();
 startBackendKeepAlive();
+setWsStatus(state.token ? "connecting" : "offline", state.token ? "warn" : "err");
+setAutoSyncStatus("off", "warn");
 flash("Ready.");

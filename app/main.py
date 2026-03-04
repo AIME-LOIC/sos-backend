@@ -4,6 +4,8 @@ import base64
 import hashlib
 import hmac
 import secrets
+import threading
+import time
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import List
@@ -19,6 +21,7 @@ from sqlalchemy.sql import func
 from passlib.context import CryptContext
 from jose import jwt, JWTError
 from pydantic import BaseModel
+import requests
 
 # --- ADDED: GEMINI IMPORT ---
 from google import genai
@@ -247,6 +250,29 @@ app.add_middleware(
 
 WEB_DIR = Path(__file__).resolve().parent.parent / "web"
 app.mount("/web", StaticFiles(directory=str(WEB_DIR), html=True), name="web")
+
+_keep_awake_started = False
+
+def keep_awake():
+    base = os.environ.get("RENDER_URL", "").strip()
+    if not base:
+        # Optional: only run if explicit URL is configured.
+        return
+    url = base.rstrip("/") + "/healthz"
+    while True:
+        try:
+            requests.get(url, timeout=10)
+        except Exception:
+            pass
+        time.sleep(10 * 60)  # ping every 10 minutes
+
+@app.on_event("startup")
+def start_keep_awake():
+    global _keep_awake_started
+    if _keep_awake_started:
+        return
+    _keep_awake_started = True
+    threading.Thread(target=keep_awake, daemon=True).start()
 
 # ---------------- ROUTES ----------------
 
