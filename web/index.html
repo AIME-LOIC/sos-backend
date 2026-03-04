@@ -334,14 +334,14 @@ body {
 .brand-shield {
   width: 18px;
   height: 18px;
-  border: 2px solid #2c66ea;
+  border: 2px solid #cf1e24;
   border-radius: 5px;
   transform: rotate(45deg);
   display: inline-block;
 }
 
 .brand-area h2 {
-  color: #2563eb;
+  color: #cf1e24;
   font-size: 2rem;
   letter-spacing: 0.01em;
   margin: 0;
@@ -360,6 +360,7 @@ body {
   display: flex;
   align-items: center;
   gap: 1.2rem;
+  margin-left: auto;
 }
 
 .top-actions button {
@@ -386,20 +387,25 @@ body {
   font-weight: 700;
 }
 
-.system-state {
-  color: #0f9f58;
-  font-size: 0.85rem;
-  font-weight: 800;
-  margin-left: auto;
-}
-
 .status-card {
   border-radius: 0;
   box-shadow: none;
-  border-top: 0;
-  border-bottom: 0;
-  background: #f4f6fa;
+  border-top: 1px solid #dde3ec;
+  border-bottom: 1px solid #dde3ec;
+  background: #eef2f7;
   padding: 0.75rem 1.15rem;
+}
+
+.status-grid {
+  gap: 0.65rem;
+}
+
+.status-grid p {
+  background: #ffffff;
+  border: 1px solid #cbd6e5;
+  box-shadow: 0 3px 10px rgba(16, 24, 39, 0.08);
+  font-weight: 600;
+  color: #253349;
 }
 
 .app-card {
@@ -553,7 +559,6 @@ body {
           <button id="goDevices" type="button">Devices</button>
           <button id="logoutBtn" type="button" class="ghost">Logout</button>
         </nav>
-        <div class="system-state">SYSTEM READY</div>
       </header>
 
       <article class="card status-card">
