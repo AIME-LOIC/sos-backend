@@ -7,6 +7,9 @@ let toastTimer = null;
 let notifyWs = null;
 let notifyPingTimer = null;
 let notifyReconnectTimer = null;
+let alertPollTimer = null;
+let lastSeenAlertId = null;
+let alertsBaselineReady = false;
 
 const el = {
   routeLogin: document.getElementById("routeLogin"),
@@ -116,6 +119,17 @@ function stopNotificationsSocket() {
   notifyWs = null;
 }
 
+function handleIncomingAlert(msg) {
+  if (!msg) return;
+  const src = (msg.source_type || "app").toUpperCase();
+  const from = msg.source_device_uid ? ` (${msg.source_device_uid})` : "";
+  const text = `SOS received from ${src}${from}`;
+  flash(text, src === "DEVICE" ? "err" : "ok");
+  pingBeep();
+  if (document.hidden) showBrowserNotification("SOS Alert", text);
+  if (getPath() === "/history") loadHistory();
+}
+
 function startNotificationsSocket() {
   stopNotificationsSocket();
   if (!state.token) return;
@@ -133,16 +147,7 @@ function startNotificationsSocket() {
     let msg = null;
     try { msg = JSON.parse(event.data); } catch { return; }
     if (!msg || msg.type !== "sos_created") return;
-
-    const src = (msg.source_type || "app").toUpperCase();
-    const from = msg.source_device_uid ? ` (${msg.source_device_uid})` : "";
-    const text = `SOS received from ${src}${from}`;
-    flash(text, src === "DEVICE" ? "err" : "ok");
-    pingBeep();
-    if (document.hidden) {
-      showBrowserNotification("SOS Alert", text);
-    }
-    if (getPath() === "/history") loadHistory();
+    handleIncomingAlert(msg);
   };
 
   notifyWs.onclose = () => {
@@ -155,6 +160,53 @@ function startNotificationsSocket() {
   notifyWs.onerror = () => {
     // Connection retry handled by onclose.
   };
+}
+
+function stopAlertPolling() {
+  if (alertPollTimer) clearInterval(alertPollTimer);
+  alertPollTimer = null;
+  alertsBaselineReady = false;
+  lastSeenAlertId = null;
+}
+
+async function pollAlertsForNotifications() {
+  if (!state.token) return;
+  try {
+    const list = await request("/sos/my-alerts");
+    if (!Array.isArray(list) || list.length === 0) return;
+
+    const newest = list[0];
+    const newestId = String(newest.id || newest.sos_id || "");
+    if (!newestId) return;
+
+    if (!alertsBaselineReady) {
+      lastSeenAlertId = newestId;
+      alertsBaselineReady = true;
+      return;
+    }
+
+    if (newestId === lastSeenAlertId) return;
+
+    const newAlerts = [];
+    for (const item of list) {
+      const itemId = String(item.id || item.sos_id || "");
+      if (!itemId || itemId === lastSeenAlertId) break;
+      newAlerts.push(item);
+    }
+
+    // Show oldest-first so toasts read in sequence.
+    newAlerts.reverse().forEach((a) => handleIncomingAlert(a));
+    lastSeenAlertId = newestId;
+  } catch (_) {
+    // Silent fallback poll.
+  }
+}
+
+function startAlertPolling() {
+  stopAlertPolling();
+  if (!state.token) return;
+  pollAlertsForNotifications();
+  alertPollTimer = setInterval(pollAlertsForNotifications, 12000);
 }
 
 function startBackendKeepAlive() {
@@ -368,6 +420,7 @@ el.loginForm.addEventListener("submit", async (e) => {
     updateTopRow();
     refreshDeviceInfo();
     startNotificationsSocket();
+    startAlertPolling();
     setHash("/app");
     flash("Logged in.");
   } catch (error) {
@@ -395,6 +448,7 @@ el.registerForm.addEventListener("submit", async (e) => {
     updateTopRow();
     refreshDeviceInfo();
     startNotificationsSocket();
+    startAlertPolling();
     setHash("/app");
     flash("Account created.");
   } catch (error) {
@@ -447,6 +501,7 @@ if (el.disconnectDeviceBtn) {
 
 function logout() {
   stopNotificationsSocket();
+  stopAlertPolling();
   state.token = "";
   saveState();
   updateTopRow();
@@ -489,5 +544,6 @@ if (!location.hash) setHash(state.token ? "/app" : "/login");
 guardRoute();
 refreshDeviceInfo();
 startNotificationsSocket();
+startAlertPolling();
 startBackendKeepAlive();
 flash("Ready.");

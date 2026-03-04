@@ -370,7 +370,12 @@ async def create_sos(
 
 @app.get("/sos/my-alerts")
 def my_alerts(user: User = Depends(get_current_user), db: Session = Depends(get_db)):
-    return db.query(SOSAlert).filter(SOSAlert.user_id == user.id).all()
+    return (
+        db.query(SOSAlert)
+        .filter(SOSAlert.user_id == user.id)
+        .order_by(SOSAlert.created_at.desc())
+        .all()
+    )
 
 @app.post("/devices/link")
 def link_device(data: DeviceLinkRequest, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
