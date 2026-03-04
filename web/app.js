@@ -10,6 +10,8 @@ let notifyReconnectTimer = null;
 let alertPollTimer = null;
 let lastSeenAlertId = null;
 let alertsBaselineReady = false;
+let warningQueue = [];
+let warningOpen = false;
 
 const el = {
   routeLogin: document.getElementById("routeLogin"),
@@ -56,6 +58,10 @@ const el = {
   confirmMessage: document.getElementById("confirmMessage"),
   confirmCancel: document.getElementById("confirmCancel"),
   confirmOk: document.getElementById("confirmOk"),
+  alertWarningModal: document.getElementById("alertWarningModal"),
+  alertWarningTitle: document.getElementById("alertWarningTitle"),
+  alertWarningMessage: document.getElementById("alertWarningMessage"),
+  alertWarningClose: document.getElementById("alertWarningClose"),
 };
 
 function flash(message, kind = "ok") {
@@ -119,6 +125,31 @@ function stopNotificationsSocket() {
   notifyWs = null;
 }
 
+function renderWarningModal(item) {
+  if (!item || !el.alertWarningModal) return;
+  el.alertWarningTitle.textContent = item.title;
+  el.alertWarningMessage.textContent = item.message;
+  el.alertWarningModal.classList.add("show");
+  warningOpen = true;
+}
+
+function closeWarningModal() {
+  if (el.alertWarningModal) el.alertWarningModal.classList.remove("show");
+  warningOpen = false;
+  if (warningQueue.length > 0) {
+    renderWarningModal(warningQueue.shift());
+  }
+}
+
+function queueWarningModal(title, message) {
+  const item = { title, message };
+  if (!warningOpen) {
+    renderWarningModal(item);
+    return;
+  }
+  warningQueue.push(item);
+}
+
 function handleIncomingAlert(msg) {
   if (!msg) return;
   const src = (msg.source_type || "app").toUpperCase();
@@ -126,6 +157,7 @@ function handleIncomingAlert(msg) {
   const text = `SOS received from ${src}${from}`;
   flash(text, src === "DEVICE" ? "err" : "ok");
   pingBeep();
+  queueWarningModal("Emergency Alert", text);
   if (document.hidden) showBrowserNotification("SOS Alert", text);
   if (getPath() === "/history") loadHistory();
 }
@@ -502,6 +534,8 @@ if (el.disconnectDeviceBtn) {
 function logout() {
   stopNotificationsSocket();
   stopAlertPolling();
+  warningQueue = [];
+  closeWarningModal();
   state.token = "";
   saveState();
   updateTopRow();
@@ -536,6 +570,7 @@ el.detectLocation.addEventListener("click", async () => {
   }
 });
 el.triggerSOSBig.addEventListener("click", sendSOS);
+if (el.alertWarningClose) el.alertWarningClose.addEventListener("click", closeWarningModal);
 
 window.addEventListener("hashchange", guardRoute);
 updateTopRow();
