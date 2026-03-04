@@ -4,6 +4,9 @@ const state = {
   location: null,
 };
 let toastTimer = null;
+let notifyWs = null;
+let notifyPingTimer = null;
+let notifyReconnectTimer = null;
 
 const el = {
   routeLogin: document.getElementById("routeLogin"),
@@ -28,6 +31,7 @@ const el = {
   detectLocation: document.getElementById("detectLocation"),
   triggerSOSBig: document.getElementById("triggerSOSBig"),
   locationState: document.getElementById("locationState"),
+  headerDeviceState: document.getElementById("headerDeviceState"),
   lastSend: document.getElementById("lastSend"),
   deviceLinkForm: document.getElementById("deviceLinkForm"),
   deviceUid: document.getElementById("deviceUid"),
@@ -58,6 +62,109 @@ function flash(message, kind = "ok") {
   toastTimer = setTimeout(() => {
     el.flash.classList.remove("show");
   }, 2400);
+}
+
+function wsBaseFromHttp(baseUrl) {
+  if (baseUrl.startsWith("https://")) return `wss://${baseUrl.slice(8)}`;
+  if (baseUrl.startsWith("http://")) return `ws://${baseUrl.slice(7)}`;
+  if (baseUrl.startsWith("wss://") || baseUrl.startsWith("ws://")) return baseUrl;
+  return `${window.location.protocol === "https:" ? "wss" : "ws"}://${window.location.host}`;
+}
+
+function pingBeep() {
+  try {
+    const AudioCtx = window.AudioContext || window.webkitAudioContext;
+    if (!AudioCtx) return;
+    const ctx = new AudioCtx();
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.type = "sine";
+    osc.frequency.value = 880;
+    gain.gain.value = 0.001;
+    osc.connect(gain);
+    gain.connect(ctx.destination);
+    osc.start();
+    gain.gain.exponentialRampToValueAtTime(0.2, ctx.currentTime + 0.01);
+    gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.22);
+    osc.stop(ctx.currentTime + 0.25);
+  } catch (_) {
+    // Best effort only.
+  }
+}
+
+function showBrowserNotification(title, body) {
+  if (!("Notification" in window)) return;
+  if (Notification.permission === "granted") {
+    new Notification(title, { body });
+    return;
+  }
+  if (Notification.permission !== "denied") {
+    Notification.requestPermission().then((perm) => {
+      if (perm === "granted") new Notification(title, { body });
+    });
+  }
+}
+
+function stopNotificationsSocket() {
+  if (notifyPingTimer) clearInterval(notifyPingTimer);
+  notifyPingTimer = null;
+  if (notifyReconnectTimer) clearTimeout(notifyReconnectTimer);
+  notifyReconnectTimer = null;
+  if (notifyWs) {
+    try { notifyWs.close(); } catch (_) {}
+  }
+  notifyWs = null;
+}
+
+function startNotificationsSocket() {
+  stopNotificationsSocket();
+  if (!state.token) return;
+
+  const wsUrl = `${wsBaseFromHttp(state.baseUrl)}/ws/notifications?token=${encodeURIComponent(state.token)}`;
+  notifyWs = new WebSocket(wsUrl);
+
+  notifyWs.onopen = () => {
+    notifyPingTimer = setInterval(() => {
+      if (notifyWs && notifyWs.readyState === WebSocket.OPEN) notifyWs.send("ping");
+    }, 25000);
+  };
+
+  notifyWs.onmessage = (event) => {
+    let msg = null;
+    try { msg = JSON.parse(event.data); } catch { return; }
+    if (!msg || msg.type !== "sos_created") return;
+
+    const src = (msg.source_type || "app").toUpperCase();
+    const from = msg.source_device_uid ? ` (${msg.source_device_uid})` : "";
+    const text = `SOS received from ${src}${from}`;
+    flash(text, src === "DEVICE" ? "err" : "ok");
+    pingBeep();
+    if (document.hidden) {
+      showBrowserNotification("SOS Alert", text);
+    }
+    if (getPath() === "/history") loadHistory();
+  };
+
+  notifyWs.onclose = () => {
+    if (notifyPingTimer) clearInterval(notifyPingTimer);
+    notifyPingTimer = null;
+    if (!state.token) return;
+    notifyReconnectTimer = setTimeout(startNotificationsSocket, 3000);
+  };
+
+  notifyWs.onerror = () => {
+    // Connection retry handled by onclose.
+  };
+}
+
+function startBackendKeepAlive() {
+  setInterval(async () => {
+    try {
+      await fetch(`${state.baseUrl}/healthz`, { cache: "no-store" });
+    } catch (_) {
+      // Silent keepalive; ignore network errors.
+    }
+  }, 240000);
 }
 
 function confirmPopup(message, title = "Confirm Action") {
@@ -216,12 +323,14 @@ async function refreshDeviceInfo() {
     if (!Array.isArray(devices) || devices.length === 0) {
       el.deviceTokenInfo.textContent = "No device connected yet.";
       if (el.connectedDeviceBadge) el.connectedDeviceBadge.textContent = "Device: none";
+      if (el.headerDeviceState) el.headerDeviceState.textContent = "Device: not connected";
       if (el.disconnectDeviceBtn) el.disconnectDeviceBtn.disabled = true;
       return;
     }
     const d = devices[0];
     el.deviceTokenInfo.textContent = `Linked: ${d.device_uid} | Token: ${d.device_token}`;
     if (el.connectedDeviceBadge) el.connectedDeviceBadge.textContent = `Device: ${d.device_uid}`;
+    if (el.headerDeviceState) el.headerDeviceState.textContent = `Device: connected (${d.device_uid})`;
     if (el.disconnectDeviceBtn) {
       el.disconnectDeviceBtn.disabled = false;
       el.disconnectDeviceBtn.dataset.deviceUid = d.device_uid;
@@ -229,6 +338,7 @@ async function refreshDeviceInfo() {
   } catch (error) {
     el.deviceTokenInfo.textContent = "Could not load device info.";
     if (el.connectedDeviceBadge) el.connectedDeviceBadge.textContent = "Device: unavailable";
+    if (el.headerDeviceState) el.headerDeviceState.textContent = "Device: unavailable";
   }
 }
 
@@ -257,6 +367,7 @@ el.loginForm.addEventListener("submit", async (e) => {
     saveState();
     updateTopRow();
     refreshDeviceInfo();
+    startNotificationsSocket();
     setHash("/app");
     flash("Logged in.");
   } catch (error) {
@@ -283,6 +394,7 @@ el.registerForm.addEventListener("submit", async (e) => {
     saveState();
     updateTopRow();
     refreshDeviceInfo();
+    startNotificationsSocket();
     setHash("/app");
     flash("Account created.");
   } catch (error) {
@@ -303,6 +415,7 @@ if (el.deviceLinkForm) {
         body: JSON.stringify(payload),
       });
       el.deviceTokenInfo.textContent = `Linked: ${data.device_uid} | Token: ${data.device_token}`;
+      if (el.headerDeviceState) el.headerDeviceState.textContent = `Device: connected (${data.device_uid})`;
       flash("Device connected. Copy token to NodeMCU firmware.");
     } catch (error) {
       flash(`Device link failed: ${error.message}`, "err");
@@ -333,11 +446,14 @@ if (el.disconnectDeviceBtn) {
 }
 
 function logout() {
+  stopNotificationsSocket();
   state.token = "";
   saveState();
   updateTopRow();
   if (el.deviceTokenInfo) el.deviceTokenInfo.textContent = "No device connected yet.";
   if (el.connectedDeviceBadge) el.connectedDeviceBadge.textContent = "Device: none";
+  if (el.headerDeviceState) el.headerDeviceState.textContent = "Device: not connected";
+  if (el.lastSend) el.lastSend.textContent = "No alert sent yet.";
   if (el.disconnectDeviceBtn) {
     el.disconnectDeviceBtn.disabled = true;
     el.disconnectDeviceBtn.dataset.deviceUid = "";
@@ -372,4 +488,6 @@ setLocationUI();
 if (!location.hash) setHash(state.token ? "/app" : "/login");
 guardRoute();
 refreshDeviceInfo();
+startNotificationsSocket();
+startBackendKeepAlive();
 flash("Ready.");

@@ -8,7 +8,7 @@ from datetime import datetime, timedelta
 from pathlib import Path
 from typing import List
 
-from fastapi import FastAPI, Depends, HTTPException, status, Body, Request
+from fastapi import FastAPI, Depends, HTTPException, status, Body, Request, WebSocket, WebSocketDisconnect, Query
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
@@ -234,6 +234,80 @@ app.mount("/web", StaticFiles(directory=str(WEB_DIR), html=True), name="web")
 def health_check():
     return {"status": "online", "system": "SOS Emergency"}
 
+@app.get("/healthz")
+def healthz():
+    return {"ok": True, "ts": datetime.utcnow().isoformat() + "Z"}
+
+
+class NotificationHub:
+    def __init__(self):
+        self._by_user_id: dict[str, list[WebSocket]] = {}
+
+    async def connect(self, user_id: str, ws: WebSocket):
+        await ws.accept()
+        self._by_user_id.setdefault(user_id, []).append(ws)
+
+    def disconnect(self, user_id: str, ws: WebSocket):
+        conns = self._by_user_id.get(user_id, [])
+        self._by_user_id[user_id] = [c for c in conns if c is not ws]
+        if not self._by_user_id[user_id]:
+            self._by_user_id.pop(user_id, None)
+
+    async def notify_user(self, user_id: str, payload: dict):
+        conns = list(self._by_user_id.get(user_id, []))
+        for ws in conns:
+            try:
+                await ws.send_json(payload)
+            except Exception:
+                self.disconnect(user_id, ws)
+
+
+hub = NotificationHub()
+
+
+def user_from_token_or_401(token: str, db: Session) -> User:
+    cred_exc = HTTPException(status_code=401, detail="Invalid websocket token")
+    try:
+        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+        user_id_str: str = payload.get("sub")
+        if not user_id_str:
+            raise cred_exc
+        user_id = uuid.UUID(user_id_str)
+    except Exception:
+        raise cred_exc
+    user = db.query(User).filter(User.id == user_id).first()
+    if not user:
+        raise cred_exc
+    return user
+
+
+@app.websocket("/ws/notifications")
+async def ws_notifications(websocket: WebSocket, token: str = Query(...)):
+    db = SessionLocal()
+    user: User | None = None
+    try:
+        user = user_from_token_or_401(token, db)
+        user_id = str(user.id)
+        await hub.connect(user_id, websocket)
+        await hub.notify_user(
+            user_id,
+            {"type": "ws_connected", "message": "Notification channel connected"},
+        )
+        while True:
+            # Receive keepalive pings from client.
+            await websocket.receive_text()
+    except WebSocketDisconnect:
+        pass
+    except Exception:
+        try:
+            await websocket.close(code=1008)
+        except Exception:
+            pass
+    finally:
+        if user is not None:
+            hub.disconnect(str(user.id), websocket)
+        db.close()
+
 @app.post("/auth/register")
 def register(user: UserCreate, db: Session = Depends(get_db)):
     if db.query(User).filter(User.phone == user.phone).first():
@@ -260,7 +334,7 @@ def login(form_data: OAuth2PasswordRequestForm = Depends(), db: Session = Depend
     return {"access_token": token, "token_type": "bearer"}
 
 @app.post("/sos/create")
-def create_sos(
+async def create_sos(
     sos: SOSCreate,
     request: Request,
     user: User = Depends(get_current_user),
@@ -277,6 +351,21 @@ def create_sos(
     db.add(alert)
     db.commit()
     db.refresh(alert)
+
+    await hub.notify_user(
+        str(user.id),
+        {
+            "type": "sos_created",
+            "sos_id": str(alert.id),
+            "user_id": str(user.id),
+            "source_type": alert.source_type or "app",
+            "source_device_uid": alert.source_device_uid,
+            "latitude": alert.latitude,
+            "longitude": alert.longitude,
+            "status": alert.status,
+            "created_at": alert.created_at.isoformat() if alert.created_at else None,
+        },
+    )
     return alert
 
 @app.get("/sos/my-alerts")
@@ -355,7 +444,7 @@ def unlink_my_device(data: DeviceUnlinkRequest, user: User = Depends(get_current
     }
 
 @app.post("/device/sos")
-def create_sos_from_device(payload: DeviceSOSCreate, db: Session = Depends(get_db)):
+async def create_sos_from_device(payload: DeviceSOSCreate, db: Session = Depends(get_db)):
     device_uid = payload.device_uid.strip()
     device = db.query(Device).filter(Device.device_uid == device_uid).first()
     if not device:
@@ -376,6 +465,21 @@ def create_sos_from_device(payload: DeviceSOSCreate, db: Session = Depends(get_d
     device.last_seen_at = datetime.utcnow()
     db.commit()
     db.refresh(alert)
+
+    await hub.notify_user(
+        str(device.owner_user_id),
+        {
+            "type": "sos_created",
+            "sos_id": str(alert.id),
+            "user_id": str(device.owner_user_id),
+            "source_type": "device",
+            "source_device_uid": device.device_uid,
+            "latitude": alert.latitude,
+            "longitude": alert.longitude,
+            "status": alert.status,
+            "created_at": alert.created_at.isoformat() if alert.created_at else None,
+        },
+    )
 
     return {
         "message": "SOS received from device",
