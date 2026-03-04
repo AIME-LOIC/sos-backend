@@ -20,6 +20,12 @@ let autoSyncLastLat = null;
 let autoSyncLastLon = null;
 const AUTO_SYNC_MIN_INTERVAL_MS = 12000;
 const AUTO_SYNC_MIN_DISTANCE_M = 15;
+const SOS_HOLD_MS = 1800;
+let sosHoldActive = false;
+let sosHoldStartedAt = 0;
+let sosHoldRaf = null;
+let sosHoldSent = false;
+let sendingSOS = false;
 
 const el = {
   routeLogin: document.getElementById("routeLogin"),
@@ -97,6 +103,12 @@ function setAutoSyncStatus(text, cls = "") {
   if (!el.autoSyncStatus) return;
   el.autoSyncStatus.className = `pill ${cls}`.trim();
   el.autoSyncStatus.textContent = `Auto Sync: ${text}`;
+}
+
+function setSosHoldProgress(ratio) {
+  if (!el.triggerSOSBig) return;
+  const pct = Math.max(0, Math.min(1, ratio)) * 100;
+  el.triggerSOSBig.style.setProperty("--hold-progress", `${pct}%`);
 }
 
 function wsBaseFromHttp(baseUrl) {
@@ -223,6 +235,11 @@ function queueWarningModal(title, message) {
 function handleIncomingAlert(msg) {
   if (!msg) return;
   const src = (msg.source_type || "app").toUpperCase();
+  // Web-origin alerts should not trigger warning popup/sound on web clients.
+  if (src === "WEB") {
+    if (getPath() === "/history") loadHistory();
+    return;
+  }
   const from = msg.source_device_uid ? ` (${msg.source_device_uid})` : "";
   const text = `SOS received from ${src}${from}`;
   flash(text, src === "DEVICE" ? "err" : "ok");
@@ -522,6 +539,8 @@ function captureLocation() {
 }
 
 async function sendSOS() {
+  if (sendingSOS) return;
+  sendingSOS = true;
   try {
     const loc = await captureLocation();
     await request("/sos/create", { method: "POST", body: JSON.stringify(loc) });
@@ -529,7 +548,50 @@ async function sendSOS() {
     flash("SOS sent.");
   } catch (error) {
     flash(`SOS failed: ${error.message}`, "err");
+  } finally {
+    sendingSOS = false;
   }
+}
+
+function stopSosHold() {
+  sosHoldActive = false;
+  if (sosHoldRaf) cancelAnimationFrame(sosHoldRaf);
+  sosHoldRaf = null;
+  if (el.triggerSOSBig) el.triggerSOSBig.classList.remove("holding");
+  setSosHoldProgress(0);
+}
+
+function sosHoldTick(ts) {
+  if (!sosHoldActive) return;
+  const elapsed = ts - sosHoldStartedAt;
+  const ratio = Math.min(1, elapsed / SOS_HOLD_MS);
+  setSosHoldProgress(ratio);
+
+  if (ratio >= 1 && !sosHoldSent) {
+    sosHoldSent = true;
+    stopSosHold();
+    sendSOS();
+    return;
+  }
+  sosHoldRaf = requestAnimationFrame(sosHoldTick);
+}
+
+function startSosHold(e) {
+  if (!el.triggerSOSBig) return;
+  if (sendingSOS) return;
+  if (e) e.preventDefault();
+  sosHoldActive = true;
+  sosHoldSent = false;
+  sosHoldStartedAt = performance.now();
+  el.triggerSOSBig.classList.add("holding");
+  setSosHoldProgress(0);
+  sosHoldRaf = requestAnimationFrame(sosHoldTick);
+}
+
+function releaseSosHold() {
+  if (!sosHoldActive) return;
+  if (sosHoldSent) return;
+  stopSosHold();
 }
 
 function renderHistory(items) {
@@ -766,7 +828,10 @@ el.detectLocation.addEventListener("click", async () => {
     flash(`Location failed: ${error.message}`, "err");
   }
 });
-el.triggerSOSBig.addEventListener("click", sendSOS);
+el.triggerSOSBig.addEventListener("pointerdown", startSosHold);
+el.triggerSOSBig.addEventListener("pointerup", releaseSosHold);
+el.triggerSOSBig.addEventListener("pointercancel", releaseSosHold);
+el.triggerSOSBig.addEventListener("pointerleave", releaseSosHold);
 if (el.alertWarningClose) el.alertWarningClose.addEventListener("click", closeWarningModal);
 window.addEventListener("pointerdown", () => {
   const ctx = initAudioContext();
