@@ -145,6 +145,37 @@ class DeviceCommandPullRequest(BaseModel):
     device_uid: str
     device_token: str
 
+def normalize_phone_number(value: str | None) -> str:
+    if not value:
+        return ""
+    return "".join(ch for ch in value if ch.isdigit())
+
+def connected_user_ids_for_emergency(owner: User, db: Session) -> list:
+    """
+    Connectivity rule:
+    1) Same emergency number group: users sharing owner.emergency_contact
+    2) Users who set owner's phone as their emergency contact
+    """
+    owner_phone = normalize_phone_number(owner.phone)
+    owner_emergency = normalize_phone_number(owner.emergency_contact)
+    connected_ids = {owner.id}
+
+    users = db.query(User.id, User.phone, User.emergency_contact).all()
+    for u in users:
+        if u.id == owner.id:
+            continue
+        user_emergency = normalize_phone_number(u.emergency_contact)
+        if not user_emergency:
+            continue
+
+        if owner_phone and user_emergency == owner_phone:
+            connected_ids.add(u.id)
+            continue
+        if owner_emergency and user_emergency == owner_emergency:
+            connected_ids.add(u.id)
+
+    return list(connected_ids)
+
 # ---------------- SECURITY ----------------
 
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
@@ -588,6 +619,60 @@ def get_next_device_command(
             "latitude": cmd.latitude,
             "longitude": cmd.longitude,
             "created_at": cmd.created_at.isoformat() if cmd.created_at else None,
+        },
+    }
+
+@app.post("/device/alerts/device-active")
+def get_active_device_alert_state(
+    payload: DeviceCommandPullRequest,
+    db: Session = Depends(get_db),
+):
+    device_uid = payload.device_uid.strip()
+    device = db.query(Device).filter(Device.device_uid == device_uid).first()
+    if not device:
+        raise HTTPException(status_code=404, detail="Unknown device")
+    if device.device_token != payload.device_token:
+        raise HTTPException(status_code=401, detail="Invalid device token")
+    if not device.owner_user_id:
+        raise HTTPException(status_code=400, detail="Device is not linked to a user")
+
+    owner_user = db.query(User).filter(User.id == device.owner_user_id).first()
+    if not owner_user:
+        raise HTTPException(status_code=404, detail="Device owner not found")
+
+    connected_user_ids = connected_user_ids_for_emergency(owner_user, db)
+    alert = (
+        db.query(SOSAlert)
+        .filter(
+            SOSAlert.user_id.in_(connected_user_ids),
+            SOSAlert.status == "active",
+        )
+        .order_by(SOSAlert.created_at.desc())
+        .first()
+    )
+
+    if not alert:
+        return {
+            "has_active_device_alert": False,
+            "has_active_alert": False,
+            "connected_users_count": len(connected_user_ids),
+            "alert": None,
+        }
+
+    return {
+        "has_active_device_alert": True,
+        "has_active_alert": True,
+        "connected_users_count": len(connected_user_ids),
+        "alert": {
+            "id": str(alert.id),
+            "user_id": str(alert.user_id) if alert.user_id else None,
+            "source_device_uid": alert.source_device_uid,
+            "source_type": alert.source_type or "app",
+            "latitude": alert.latitude,
+            "longitude": alert.longitude,
+            "status": alert.status,
+            "created_at": alert.created_at.isoformat() if alert.created_at else None,
+            "is_from_this_device": (alert.source_device_uid or "") == device.device_uid,
         },
     }
 
