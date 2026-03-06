@@ -5,14 +5,11 @@
 #include <EEPROM.h>
 
 // ---------- Device Behavior ----------
-const int buttonPin = 5; // D1 (GPIO5), INPUT_PULLUP, pressed = LOW
+const int buttonPin = 4; // D2 (GPIO4), INPUT_PULLUP, pressed = LOW
 const int redLedPin = 14;   // D5 (GPIO14) - change if your wiring is different
 const int greenLedPin = 12; // D6 (GPIO12) - change if your wiring is different
-const unsigned long debounceMs = 25;
+const unsigned long debounceMs = 20;
 const unsigned long wifiRetryMs = 8000;
-const bool allowFallbackCoordsWhenNoTarget = true;
-const float fallbackLat = -1.9441;
-const float fallbackLon = 30.0619;
 
 // Coordinates are received from app/web and stored as targetLat/targetLon.
 const char* sosEndpoint = "/device/sos";
@@ -37,15 +34,12 @@ bool portalStarted = false;
 
 int lastReading = HIGH;
 int stableState = HIGH;
-bool pressPending = false;
 unsigned long lastEdgeAt = 0;
 unsigned long lastWifiTryAt = 0;
 unsigned long lastCommandPollAt = 0;
 bool hasTargetCoords = false;
 float targetLat = 0.0;
 float targetLon = 0.0;
-unsigned long lastAcceptedPressAt = 0;
-const unsigned long minPressGapMs = 900;
 
 void setLeds(bool redOn, bool greenOn) {
   digitalWrite(redLedPin, redOn ? HIGH : LOW);
@@ -147,13 +141,8 @@ bool hasRequiredConfig() {
 bool connectWifi(uint32_t timeoutMs = 20000) {
   if (WiFi.status() == WL_CONNECTED) return true;
 
-  WiFi.mode(WIFI_AP_STA);
-  WiFi.setAutoReconnect(true);
-  WiFi.persistent(false);
-  WiFi.setSleepMode(WIFI_NONE_SLEEP);
   WiFi.begin(cfg.wifiSsid, cfg.wifiPass);
-  Serial.print("WiFi connecting to SSID: ");
-  Serial.println(cfg.wifiSsid);
+  Serial.print("WiFi connecting");
   // While connecting, blink both LEDs.
   setLeds(false, false);
 
@@ -172,8 +161,7 @@ bool connectWifi(uint32_t timeoutMs = 20000) {
     setLeds(false, true);
     return true;
   }
-  Serial.print("WiFi connect failed, status=");
-  Serial.println((int)WiFi.status());
+  Serial.println("WiFi connect failed");
   // Connection fail => red ON.
   setLeds(true, false);
   return false;
@@ -269,23 +257,12 @@ bool sendSOS(float lat, float lon) {
     delay(200);
   }
 
-  // Keep existing STA link when possible; reconnect only if disconnected.
-  if (WiFi.status() != WL_CONNECTED || WiFi.localIP()[0] == 0) {
+  if (WiFi.status() != WL_CONNECTED) {
+    // Reconnect in pure STA mode for a cleaner TLS path.
     WiFi.begin(cfg.wifiSsid, cfg.wifiPass);
     unsigned long start = millis();
-    while ((WiFi.status() != WL_CONNECTED || WiFi.localIP()[0] == 0) && millis() - start < 8000) {
-      delay(80);
-      yield();
-    }
-    if (WiFi.status() != WL_CONNECTED) {
-      Serial.println("STA reconnect failed before HTTPS");
-      if (hadAp) {
-        WiFi.mode(WIFI_AP_STA);
-        WiFi.softAP(apName.c_str(), "12345678");
-        server.begin();
-      }
-      setLeds(true, false);
-      return false;
+    while (WiFi.status() != WL_CONNECTED && millis() - start < 3000) {
+      delay(200);
     }
   }
 
@@ -296,41 +273,38 @@ bool sendSOS(float lat, float lon) {
   backend.trim();
   if (backend.endsWith("/")) backend.remove(backend.length() - 1);
 
+  BearSSL::WiFiClientSecure client;
+  client.setInsecure();
+  // Render TLS can fail with very small buffers on ESP8266.
+  client.setBufferSizes(4096, 1024);
+  HTTPClient http;
+  http.setTimeout(5000);
+
   String url = backend + String(sosEndpoint);
+  if (!http.begin(client, url)) {
+    Serial.println("HTTP begin failed");
+    if (hadAp) {
+      WiFi.mode(WIFI_AP_STA);
+      WiFi.softAP(apName.c_str(), "12345678");
+      server.begin();
+    }
+    setLeds(true, false);
+    return false;
+  }
+
+  http.addHeader("Content-Type", "application/json");
   String payload = String("{\"device_uid\":\"") + deviceUid() +
                    "\",\"device_token\":\"" + String(cfg.deviceToken) +
                    "\",\"latitude\":" + String(lat, 6) +
                    ",\"longitude\":" + String(lon, 6) + "}";
 
-  int code = -1;
-  String body;
-  for (int attempt = 1; attempt <= 2; ++attempt) {
-    BearSSL::WiFiClientSecure client;
-    client.setInsecure();
-    // Lower buffers to reduce TLS RAM pressure / fragmentation on ESP8266.
-    client.setBufferSizes(1024, 512);
-    HTTPClient http;
-    http.setTimeout(15000);
-    http.useHTTP10(true);
-
-    if (!http.begin(client, url)) {
-      Serial.printf("HTTP begin failed (attempt %d)\n", attempt);
-      delay(250);
-      continue;
-    }
-
-    http.addHeader("Content-Type", "application/json");
-    code = http.POST(payload);
-    body = http.getString();
-    if (code <= 0) {
-      Serial.print("HTTP error: ");
-      Serial.println(http.errorToString(code).c_str());
-    }
-    http.end();
-
-    if (code > 0) break;
-    delay(300);
+  int code = http.POST(payload);
+  String body = http.getString();
+  if (code <= 0) {
+    Serial.print("HTTP error: ");
+    Serial.println(http.errorToString(code).c_str());
   }
+  http.end();
 
   // Restore AP portal
   if (hadAp) {
@@ -387,7 +361,7 @@ void pollDeviceCommands() {
   client.setInsecure();
   client.setBufferSizes(4096, 1024);
   HTTPClient http;
-  http.setTimeout(2200);
+  http.setTimeout(10000);
   String url = backend + String(commandPullEndpoint);
 
   int code = -1;
@@ -480,10 +454,8 @@ void setup() {
   Serial.println(String(ESP.getChipId(), HEX));
   Serial.print("Device UID: ");
   Serial.println(deviceUid());
-  Serial.println("Button wiring: INPUT_PULLUP, pressed should read LOW.");
 
   pinMode(buttonPin, INPUT_PULLUP);
-  delay(10);
   pinMode(redLedPin, OUTPUT);
   pinMode(greenLedPin, OUTPUT);
   setLeds(false, false);
@@ -513,16 +485,18 @@ void setup() {
   Serial.println("Device ready.");
   // Ready/normal state => green ON.
   setLeds(false, true);
-  if (digitalRead(buttonPin) == LOW) {
-    Serial.println("WARNING: Button pin is LOW at idle. Check button wiring (likely stuck to GND).");
-  }
 }
 
 void loop() {
   // Always serve setup page in AP mode while device runs normally.
   server.handleClient();
 
-  // Read button first to avoid missing short presses while network tasks run.
+  if (WiFi.status() != WL_CONNECTED && millis() - lastWifiTryAt > wifiRetryMs) {
+    lastWifiTryAt = millis();
+    connectWifi(8000);
+  }
+  pollDeviceCommands();
+
   int reading = digitalRead(buttonPin);
   if (reading != lastReading) {
     lastEdgeAt = millis();
@@ -532,73 +506,26 @@ void loop() {
   if ((millis() - lastEdgeAt) > debounceMs && stableState != reading) {
     stableState = reading;
     if (stableState == LOW) {
-      unsigned long now = millis();
-      if (now - lastAcceptedPressAt >= minPressGapMs) {
-        lastAcceptedPressAt = now;
-        pressPending = true;
-        Serial.println("BUTTON PRESSED");
-      } else {
-        Serial.println("BUTTON PRESSED ignored (cooldown)");
+      Serial.println("BUTTON PRESSED");
+
+      // Use cached target coordinates if available, skip polling to speed up SOS.
+      if (!hasTargetCoords) {
+        Serial.println("No target coordinates from app yet. Not sending.");
+        setLeds(true, false);
+        return;
       }
+
+      Serial.print("Sending SOS with target lat=");
+      Serial.print(targetLat, 6);
+      Serial.print(" lon=");
+      Serial.println(targetLon, 6);
+
+      bool ok = sendSOS(targetLat, targetLon);
+      Serial.println(ok ? "SOS sent" : "SOS failed");
     } else {
       Serial.println("BUTTON RELEASED");
     }
   }
 
-  // Handle pending press immediately before any polling/network work.
-  if (pressPending) {
-    pressPending = false;
-
-    // Send immediately on press for responsiveness.
-    float sendLat = targetLat;
-    float sendLon = targetLon;
-    if (!hasTargetCoords) {
-      if (!allowFallbackCoordsWhenNoTarget) {
-        Serial.println("No target coordinates from app yet. Not sending.");
-        setLeds(true, false);
-      } else {
-        sendLat = fallbackLat;
-        sendLon = fallbackLon;
-        Serial.println("No target from app/web. Using fallback coordinates.");
-      }
-    } else {
-      Serial.println("Using target coordinates received from app/web.");
-    }
-
-    Serial.print("Sending SOS with lat=");
-    Serial.print(sendLat, 6);
-    Serial.print(" lon=");
-    Serial.println(sendLon, 6);
-
-    bool ok = sendSOS(sendLat, sendLon);
-    Serial.println(ok ? "SOS sent" : "SOS failed");
-  }
-
-  if (WiFi.status() != WL_CONNECTED && millis() - lastWifiTryAt > wifiRetryMs) {
-    lastWifiTryAt = millis();
-    connectWifi(8000);
-  }
-  if (!pressPending) {
-    pollDeviceCommands();
-  }
-
-  static unsigned long lastBeat = 0;
-  if (millis() - lastBeat > 3000) {
-    lastBeat = millis();
-    Serial.print("Heartbeat | wifi=");
-    Serial.print(WiFi.status() == WL_CONNECTED ? "connected" : "disconnected");
-    Serial.print(" | button=");
-    Serial.print(stableState == LOW ? "LOW(pressed)" : "HIGH(released)");
-    if (hasTargetCoords) {
-      Serial.print(" | target=");
-      Serial.print(targetLat, 4);
-      Serial.print(",");
-      Serial.print(targetLon, 4);
-    } else {
-      Serial.print(" | target=none");
-    }
-    Serial.print(" | rawPin=");
-    Serial.print(digitalRead(buttonPin) == LOW ? "LOW" : "HIGH");
-    Serial.println();
-  }
+  // Removed heartbeat to reduce serial traffic and improve button detection speed
 }

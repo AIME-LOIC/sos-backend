@@ -7,3 +7,4 @@ python-jose[cryptography]
 python-multipart
 google-genai
 python-dotenv
+pyserial
